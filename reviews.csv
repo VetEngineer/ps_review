@@ -1,0 +1,12 @@
+review_id,app_id,text,rating
+1,com.example.app,앱이 너무 느려요 렉이 심해요,2
+2,com.example.app,정말 좋은 앱입니다! UI 디자인 좋음,5
+3,com.example.app,버벅임이 심하고 로딩 오래 걸림,1
+4,com.example.app,앱 튕김이 자주 발생해요,2
+5,com.example.app,광고가 너무 많아서 불편해요,3
+6,com.example.app,빠르고 편함 만족합니다,5
+7,com.example.app,결제 오류가 발생했어요,2
+8,com.example.app,기능이 다양하고 유용해요,4
+9,com.example.app,업데이트 후 오류가 생겼어요,2
+10,com.example.app,재미있어요 추천합니다,5
+
