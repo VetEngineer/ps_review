@@ -1,10 +1,10 @@
 'use client';
 
 import { useState } from 'react';
-import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { FileUpload } from '@/components/ui/file-upload';
-import { useToast } from '@/hooks/use-toast';
+import { Button } from '../components/ui/button';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../components/ui/card';
+import { FileUpload } from '../components/ui/file-upload';
+import { useToast } from '../hooks/use-toast';
 import { Upload, FileText, BarChart3, Loader2, TrendingUp, TrendingDown, Minus } from 'lucide-react';
 import {
   BarChart,
