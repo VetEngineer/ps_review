@@ -29,11 +29,25 @@ const nextConfig: NextConfig = {
       '@': srcPath,
     };
     
+    // Ensure extensions are resolved in correct order
+    // This is critical for resolving @/lib/utils to src/lib/utils.ts
+    config.resolve.extensions = [
+      '.tsx',
+      '.ts',
+      '.jsx',
+      '.js',
+      '.json',
+      ...(config.resolve.extensions || []).filter((ext: string) => 
+        !['.tsx', '.ts', '.jsx', '.js', '.json'].includes(ext)
+      ),
+    ];
+    
     // Debug logging for Vercel builds
     if (process.env.VERCEL) {
       console.log('[Webpack] Project root:', projectRoot);
       console.log('[Webpack] Source path:', srcPath);
       console.log('[Webpack] Utils file exists:', require('fs').existsSync(path.join(srcPath, 'lib', 'utils.ts')));
+      console.log('[Webpack] Extensions:', config.resolve.extensions);
     }
     
     return config;
