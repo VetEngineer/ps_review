@@ -1,11 +1,25 @@
 'use client';
 
 import { useState } from 'react';
+import { Badge } from '../components/ui/badge';
 import { Button } from '../components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../components/ui/card';
 import { FileUpload } from '../components/ui/file-upload';
 import { useToast } from '../hooks/use-toast';
-import { Upload, FileText, BarChart3, Loader2, TrendingUp, TrendingDown, Minus } from 'lucide-react';
+import {
+  Upload,
+  FileText,
+  BarChart3,
+  Loader2,
+  TrendingUp,
+  TrendingDown,
+  Minus,
+  Sparkles,
+  ShieldCheck,
+  Clock3,
+  CheckCircle2,
+  Info,
+} from 'lucide-react';
 import {
   BarChart,
   Bar,
@@ -28,6 +42,7 @@ interface AnalysisResult {
   negative_count: number;
   neutral_count: number;
   sentiment_label: string;
+  app_name?: string;
 }
 
 export default function Home() {
@@ -90,27 +105,25 @@ export default function Home() {
       }
       formData.append('keywords', keywordsFile);
 
-      console.log('분석 시작...');
-      
       const response = await fetch('/api/analyze', {
         method: 'POST',
         body: formData,
       });
 
-      console.log('응답 상태:', response.status, response.statusText);
-
       let data;
       try {
         data = await response.json();
-        console.log('응답 데이터:', data);
       } catch (jsonError) {
         const text = await response.text();
-        console.error('JSON 파싱 실패:', text);
         throw new Error(`서버 응답을 파싱할 수 없습니다: ${text.substring(0, 200)}`);
       }
 
       if (!response.ok) {
-        throw new Error(data.error || data.details || `서버 오류 (${response.status})`);
+        const errorMsg = data.error || data.details || `서버 오류 (${response.status})`;
+        const error = new Error(errorMsg) as any;
+        error.details = data.details;
+        error.suggestion = data.suggestion;
+        throw error;
       }
 
       if (data.success && data.data) {
@@ -127,11 +140,21 @@ export default function Home() {
       }
     } catch (error: any) {
       console.error('Analysis error:', error);
-      const errorMessage = error.message || '분석 중 오류가 발생했습니다.';
+      let errorMessage = error.message || '분석 중 오류가 발생했습니다.';
+
+      if (error.details) {
+        errorMessage = error.details;
+      }
+
+      if (errorMessage.includes('Python이 설치되어 있지 않습니다') || errorMessage.includes('command not found')) {
+        errorMessage = 'Python 실행 환경이 없습니다. 외부 Python API 서버가 필요합니다.';
+      }
+
       toast({
         title: '분석 실패',
         description: errorMessage,
         variant: 'destructive',
+        duration: 10000,
       });
     } finally {
       setIsAnalyzing(false);
@@ -163,62 +186,190 @@ export default function Home() {
     { name: '중립', value: sentimentDistribution.neutral },
   ];
 
-  return (
-    <div className="min-h-screen bg-gray-50 p-4 md:p-8">
-      <div className="max-w-7xl mx-auto space-y-6">
-        {/* 헤더 */}
-        <div className="text-center space-y-2">
-          <h1 className="text-4xl font-bold tracking-tight">리뷰 분석 대시보드</h1>
-          <p className="text-muted-foreground">
-            CSV 파일을 업로드하여 키워드별 감정 분석을 수행하세요
-          </p>
-        </div>
+  const totalReviews = analysisResults.reduce(
+    (acc, result) => acc + result.total_reviews,
+    0
+  );
 
-        {/* 파일 업로드 섹션 */}
-        <Card>
-          <CardHeader>
-            <CardTitle>파일 업로드</CardTitle>
-            <CardDescription>
-              키워드 파일은 필수입니다. 리뷰 파일은 선택사항입니다 (없으면 기본 reviews.csv 사용)
-            </CardDescription>
+  const averageSentiment = analysisResults.length
+    ? analysisResults.reduce((acc, result) => acc + result.avg_sentiment, 0) /
+      analysisResults.length
+    : 0;
+
+  const topKeyword =
+    analysisResults.length > 0
+      ? analysisResults.reduce((top, current) =>
+          current.total_reviews > top.total_reviews ? current : top
+        )
+      : null;
+
+  const dominantSentiment =
+    averageSentiment > 0.2
+      ? '긍정적'
+      : averageSentiment < -0.2
+      ? '부정적'
+      : '중립적';
+
+  const positiveRatio = totalReviews
+    ? Math.round((sentimentDistribution.positive / totalReviews) * 100)
+    : 0;
+
+  return (
+    <div className="relative min-h-screen overflow-hidden bg-[radial-gradient(circle_at_20%_20%,rgba(99,102,241,0.08),transparent_35%),radial-gradient(circle_at_80%_0%,rgba(16,185,129,0.08),transparent_30%)]">
+      <div className="absolute inset-0 bg-[linear-gradient(to_right,rgba(148,163,184,0.15)_1px,transparent_1px),linear-gradient(to_bottom,rgba(148,163,184,0.15)_1px,transparent_1px)] bg-[size:120px_120px] opacity-40" />
+      <div className="absolute inset-0 bg-gradient-to-b from-white/85 via-white to-white/95" />
+      <div className="relative mx-auto max-w-6xl space-y-10 px-4 py-10 text-slate-900">
+        <header className="space-y-6">
+          <div className="flex flex-wrap items-center gap-3 text-sm text-slate-600">
+            <Badge className="border border-slate-200 bg-white/80 text-slate-900 shadow-sm" variant="secondary">
+              Play Store 리뷰
+            </Badge>
+            <span className="flex items-center gap-2 rounded-full bg-white/80 px-3 py-1 text-slate-600 shadow-sm">
+              <Sparkles className="h-4 w-4 text-indigo-500" />
+              shadcn 스타일 대시보드
+            </span>
+          </div>
+          <div className="grid gap-6 lg:grid-cols-[1.4fr_1fr] lg:items-center">
+            <div className="space-y-4">
+              <div className="space-y-2">
+                <h1 className="text-4xl font-semibold tracking-tight">
+                  리뷰 분석 대시보드
+                </h1>
+                <p className="text-lg text-slate-600">
+                  CSV 파일을 업로드하여 키워드별 감정 흐름을 한눈에 확인하세요.
+                </p>
+              </div>
+              <div className="flex flex-wrap gap-2 text-sm text-slate-600">
+                <span className="flex items-center gap-2 rounded-full bg-white px-3 py-1 shadow-sm">
+                  <ShieldCheck className="h-4 w-4 text-emerald-500" />
+                  CSV 유효성 검사
+                </span>
+                <span className="flex items-center gap-2 rounded-full bg-white px-3 py-1 shadow-sm">
+                  <Clock3 className="h-4 w-4 text-indigo-500" />
+                  실시간 분석 진행
+                </span>
+                <span className="flex items-center gap-2 rounded-full bg-white px-3 py-1 shadow-sm">
+                  <Info className="h-4 w-4 text-slate-500" />
+                  키워드별 감정 요약 제공
+                </span>
+              </div>
+            </div>
+            <div className="grid w-full gap-3 sm:grid-cols-3">
+              <Card className="border-slate-200/80 bg-white/90 shadow-sm">
+                <CardContent className="flex items-center gap-3 p-4">
+                  <div className="rounded-lg bg-indigo-50 p-2 text-indigo-600">
+                    <BarChart3 className="h-5 w-5" />
+                  </div>
+                  <div className="space-y-0.5">
+                    <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                      총 리뷰 수
+                    </p>
+                    <p className="text-xl font-semibold">
+                      {totalReviews.toLocaleString()}
+                    </p>
+                  </div>
+                </CardContent>
+              </Card>
+              <Card className="border-slate-200/80 bg-white/90 shadow-sm">
+                <CardContent className="flex items-center gap-3 p-4">
+                  <div className="rounded-lg bg-emerald-50 p-2 text-emerald-600">
+                    <TrendingUp className="h-5 w-5" />
+                  </div>
+                  <div className="space-y-0.5">
+                    <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                      평균 감정 점수
+                    </p>
+                    <p className="text-xl font-semibold">
+                      {averageSentiment.toFixed(3)}
+                    </p>
+                  </div>
+                </CardContent>
+              </Card>
+              <Card className="border-slate-200/80 bg-white/90 shadow-sm">
+                <CardContent className="flex items-center gap-3 p-4">
+                  <div className="rounded-lg bg-blue-50 p-2 text-blue-600">
+                    <Sparkles className="h-5 w-5" />
+                  </div>
+                  <div className="space-y-0.5">
+                    <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                      우세 감정
+                    </p>
+                    <p className="text-xl font-semibold">{dominantSentiment}</p>
+                  </div>
+                </CardContent>
+              </Card>
+            </div>
+          </div>
+        </header>
+
+        <Card className="border-slate-200/80 bg-white/90 shadow-xl backdrop-blur">
+          <CardHeader className="space-y-2">
+            <div className="flex items-center gap-3">
+              <div className="rounded-full bg-indigo-50 p-2 text-indigo-600">
+                <Upload className="h-4 w-4" />
+              </div>
+              <div>
+                <CardTitle>파일 업로드</CardTitle>
+                <CardDescription className="text-slate-600">
+                  키워드 파일은 필수이며, 리뷰 파일을 생략하면 기본 reviews.csv로 분석합니다.
+                </CardDescription>
+              </div>
+            </div>
           </CardHeader>
-          <CardContent className="space-y-4">
-            <div className="grid md:grid-cols-2 gap-4">
-              {/* 리뷰 파일 업로드 */}
+          <CardContent className="space-y-6">
+            <div className="grid gap-4 md:grid-cols-2">
               <FileUpload
                 onFileChange={handleReviewsFileChange}
                 accept=".csv"
-                className="flex flex-col items-center justify-center p-8 min-h-[150px]"
+                className="group relative flex h-full w-full items-start gap-3 rounded-xl border border-dashed border-slate-200 bg-slate-50/70 px-5 py-6 text-left shadow-sm transition hover:-translate-y-0.5 hover:border-indigo-200 hover:bg-white"
               >
-                <Upload className="w-12 h-12 text-gray-400 mb-2" />
-                <p className="text-sm font-medium">
-                  {reviewsFile ? reviewsFile.name : 'reviews.csv 업로드 (선택사항)'}
-                </p>
-                <p className="text-xs text-muted-foreground mt-1">
-                  리뷰 데이터 CSV 파일 (없으면 기본 파일 사용)
-                </p>
+                <div className="rounded-xl bg-indigo-100 p-3 text-indigo-600 transition group-hover:scale-105 group-hover:bg-indigo-200">
+                  <Upload className="h-6 w-6" />
+                </div>
+                <div className="space-y-1">
+                  <p className="text-sm font-semibold text-slate-900">
+                    {reviewsFile ? reviewsFile.name : 'reviews.csv 업로드 (선택)'}
+                  </p>
+                  <p className="text-xs text-slate-600">
+                    리뷰 데이터 CSV 파일 (미제출 시 기본 데이터 사용)
+                  </p>
+                </div>
               </FileUpload>
 
-              {/* 키워드 파일 업로드 */}
               <FileUpload
                 onFileChange={handleKeywordsFileChange}
                 accept=".csv"
-                className="flex flex-col items-center justify-center p-8 min-h-[150px] border-2 border-blue-300"
+                className="group relative flex h-full w-full items-start gap-3 rounded-xl border border-dashed border-indigo-200 bg-indigo-50/70 px-5 py-6 text-left shadow-sm transition hover:-translate-y-0.5 hover:border-indigo-300 hover:bg-white"
               >
-                <FileText className="w-12 h-12 text-blue-400 mb-2" />
-                <p className="text-sm font-medium">
-                  {keywordsFile ? keywordsFile.name : 'keywords.csv 업로드 (필수)'}
-                </p>
-                <p className="text-xs text-muted-foreground mt-1">
-                  키워드 목록 CSV 파일
-                </p>
+                <div className="rounded-xl bg-indigo-100 p-3 text-indigo-600 transition group-hover:scale-105 group-hover:bg-indigo-200">
+                  <FileText className="h-6 w-6" />
+                </div>
+                <div className="space-y-1">
+                  <p className="text-sm font-semibold text-slate-900">
+                    {keywordsFile ? keywordsFile.name : 'keywords.csv 업로드 (필수)'}
+                  </p>
+                  <p className="text-xs text-slate-600">
+                    키워드 목록 CSV 파일을 업로드해주세요.
+                  </p>
+                </div>
               </FileUpload>
+            </div>
+
+            <div className="flex flex-wrap items-center justify-between gap-4 rounded-xl border border-dashed border-slate-200 bg-slate-50/60 px-4 py-3 text-sm text-slate-600">
+              <div className="flex items-center gap-3">
+                <CheckCircle2 className="h-4 w-4 text-emerald-500" />
+                <span>CSV 헤더와 인코딩을 확인한 뒤 분석을 시작하세요.</span>
+              </div>
+              <div className="flex items-center gap-2 text-slate-500">
+                <Loader2 className="h-4 w-4" />
+                <span>분석 중에는 잠시만 기다려주세요.</span>
+              </div>
             </div>
 
             <Button
               onClick={handleAnalyze}
               disabled={!keywordsFile || isAnalyzing}
-              className="w-full"
+              className="w-full bg-gradient-to-r from-indigo-500 via-blue-500 to-cyan-400 text-white shadow-lg transition hover:shadow-xl"
               size="lg"
             >
               {isAnalyzing ? (
@@ -236,145 +387,190 @@ export default function Home() {
           </CardContent>
         </Card>
 
-        {/* 결과 섹션 */}
         {analysisResults.length > 0 && (
           <div className="space-y-6">
-            {/* 앱 정보 */}
             {appName && (
-              <Card>
-                <CardHeader>
-                  <CardTitle>앱 정보</CardTitle>
+              <Card className="border-slate-200 bg-white/90 shadow-sm">
+                <CardHeader className="pb-3">
+                  <CardTitle className="text-xl">앱 정보 &amp; 요약</CardTitle>
+                  <CardDescription className="text-slate-600">
+                    분석된 데이터에 기반한 핵심 지표를 확인하세요.
+                  </CardDescription>
                 </CardHeader>
-                <CardContent>
-                  <p className="text-lg font-semibold">{appName}</p>
+                <CardContent className="grid gap-4 md:grid-cols-[1.2fr_1fr]">
+                  <div className="rounded-xl border border-slate-200 bg-slate-50/70 px-4 py-3">
+                    <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                      앱 이름
+                    </p>
+                    <p className="mt-1 text-lg font-semibold text-slate-900">
+                      {appName}
+                    </p>
+                  </div>
+                  <div className="grid gap-3 sm:grid-cols-3">
+                    <div className="rounded-xl border border-slate-200 bg-white px-4 py-3">
+                      <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                        긍정 비율
+                      </p>
+                      <p className="mt-1 text-lg font-semibold text-slate-900">
+                        {positiveRatio}%
+                      </p>
+                    </div>
+                    <div className="rounded-xl border border-slate-200 bg-white px-4 py-3">
+                      <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                        평균 감정
+                      </p>
+                      <p className="mt-1 text-lg font-semibold text-slate-900">
+                        {averageSentiment.toFixed(3)}
+                      </p>
+                    </div>
+                    <div className="rounded-xl border border-slate-200 bg-white px-4 py-3">
+                      <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                        주요 키워드
+                      </p>
+                      <p className="mt-1 text-lg font-semibold text-slate-900">
+                        {topKeyword ? topKeyword.keyword : '—'}
+                      </p>
+                    </div>
+                  </div>
                 </CardContent>
               </Card>
             )}
 
-            {/* 감정 분포 파이 차트 */}
-            <Card>
-              <CardHeader>
-                <CardTitle>전체 감정 분포</CardTitle>
-                <CardDescription>모든 키워드의 감정 분포 요약</CardDescription>
-              </CardHeader>
-              <CardContent>
-                <ResponsiveContainer width="100%" height={300}>
-                  <PieChart>
-                    <Pie
-                      data={pieChartData}
-                      cx="50%"
-                      cy="50%"
-                      labelLine={false}
-                      label={({ name, percent }) =>
-                        `${name}: ${(percent * 100).toFixed(0)}%`
-                      }
-                      outerRadius={100}
-                      fill="#8884d8"
-                      dataKey="value"
-                    >
-                      {pieChartData.map((entry, index) => (
-                        <Cell
-                          key={`cell-${index}`}
-                          fill={COLORS[index % COLORS.length]}
-                        />
-                      ))}
-                    </Pie>
-                    <Tooltip />
-                    <Legend />
-                  </PieChart>
-                </ResponsiveContainer>
-              </CardContent>
-            </Card>
+            <div className="grid gap-4 lg:grid-cols-[1.1fr_0.9fr]">
+              <Card className="border-slate-200 bg-white/90 shadow-sm">
+                <CardHeader>
+                  <CardTitle>전체 감정 분포</CardTitle>
+                  <CardDescription className="text-slate-600">
+                    모든 키워드의 감정 분포 요약
+                  </CardDescription>
+                </CardHeader>
+                <CardContent className="pt-2">
+                  <ResponsiveContainer width="100%" height={320}>
+                    <PieChart>
+                      <Pie
+                        data={pieChartData}
+                        cx="50%"
+                        cy="50%"
+                        labelLine={false}
+                        label={({ name, percent }) =>
+                          `${name}: ${(percent * 100).toFixed(0)}%`
+                        }
+                        outerRadius={120}
+                        fill="#8884d8"
+                        dataKey="value"
+                      >
+                        {pieChartData.map((entry, index) => (
+                          <Cell
+                            key={`cell-${index}`}
+                            fill={COLORS[index % COLORS.length]}
+                          />
+                        ))}
+                      </Pie>
+                      <Tooltip />
+                      <Legend />
+                    </PieChart>
+                  </ResponsiveContainer>
+                </CardContent>
+              </Card>
 
-            {/* 키워드별 감정 분석 차트 */}
-            <Card>
-              <CardHeader>
-                <CardTitle>키워드별 감정 분석</CardTitle>
-                <CardDescription>각 키워드에 대한 긍정/부정/중립 리뷰 수</CardDescription>
-              </CardHeader>
-              <CardContent>
-                <ResponsiveContainer width="100%" height={400}>
-                  <BarChart data={sentimentChartData}>
-                    <CartesianGrid strokeDasharray="3 3" />
-                    <XAxis
-                      dataKey="keyword"
-                      angle={-45}
-                      textAnchor="end"
-                      height={100}
-                    />
-                    <YAxis />
-                    <Tooltip />
-                    <Legend />
-                    <Bar dataKey="긍정" fill="#10b981" />
-                    <Bar dataKey="부정" fill="#ef4444" />
-                    <Bar dataKey="중립" fill="#6b7280" />
-                  </BarChart>
-                </ResponsiveContainer>
-              </CardContent>
-            </Card>
+              <Card className="border-slate-200 bg-white/90 shadow-sm">
+                <CardHeader>
+                  <CardTitle>키워드별 감정 분석</CardTitle>
+                  <CardDescription className="text-slate-600">
+                    각 키워드에 대한 긍정/부정/중립 리뷰 수
+                  </CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <ResponsiveContainer width="100%" height={320}>
+                    <BarChart data={sentimentChartData}>
+                      <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
+                      <XAxis
+                        dataKey="keyword"
+                        angle={-35}
+                        textAnchor="end"
+                        height={80}
+                      />
+                      <YAxis />
+                      <Tooltip />
+                      <Legend />
+                      <Bar dataKey="긍정" fill="#10b981" />
+                      <Bar dataKey="부정" fill="#ef4444" />
+                      <Bar dataKey="중립" fill="#6b7280" />
+                    </BarChart>
+                  </ResponsiveContainer>
+                </CardContent>
+              </Card>
+            </div>
 
-            {/* 상세 결과 테이블 */}
-            <Card>
+            <Card className="border-slate-200 bg-white/95 shadow-sm">
               <CardHeader>
                 <CardTitle>상세 분석 결과</CardTitle>
-                <CardDescription>키워드별 상세 통계</CardDescription>
+                <CardDescription className="text-slate-600">
+                  키워드별 상세 통계
+                </CardDescription>
               </CardHeader>
-              <CardContent>
-                <div className="overflow-x-auto">
-                  <table className="w-full border-collapse">
-                    <thead>
-                      <tr className="border-b">
-                        <th className="text-left p-2">키워드</th>
-                        <th className="text-right p-2">총 리뷰</th>
-                        <th className="text-right p-2">평균 감정</th>
-                        <th className="text-right p-2">긍정</th>
-                        <th className="text-right p-2">부정</th>
-                        <th className="text-right p-2">중립</th>
-                        <th className="text-center p-2">감정 라벨</th>
+              <CardContent className="p-0">
+                <div className="overflow-hidden rounded-b-xl border-t border-slate-200">
+                  <table className="w-full min-w-[700px] text-sm">
+                    <thead className="bg-slate-50 text-slate-600">
+                      <tr className="border-b border-slate-200">
+                        <th className="px-4 py-3 text-left font-semibold">키워드</th>
+                        <th className="px-4 py-3 text-right font-semibold">총 리뷰</th>
+                        <th className="px-4 py-3 text-right font-semibold">평균 감정</th>
+                        <th className="px-4 py-3 text-right font-semibold">긍정</th>
+                        <th className="px-4 py-3 text-right font-semibold">부정</th>
+                        <th className="px-4 py-3 text-right font-semibold">중립</th>
+                        <th className="px-4 py-3 text-center font-semibold">감정 라벨</th>
                       </tr>
                     </thead>
-                    <tbody>
+                    <tbody className="divide-y divide-slate-200 bg-white">
                       {analysisResults.map((result, index) => (
-                        <tr key={index} className="border-b hover:bg-gray-50">
-                          <td className="p-2 font-medium">{result.keyword}</td>
-                          <td className="text-right p-2">{result.total_reviews}</td>
-                          <td className="text-right p-2">
+                        <tr key={index} className="transition hover:bg-slate-50/80">
+                          <td className="px-4 py-3 font-medium text-slate-900">
+                            {result.keyword}
+                          </td>
+                          <td className="px-4 py-3 text-right text-slate-700">
+                            {result.total_reviews.toLocaleString()}
+                          </td>
+                          <td className="px-4 py-3 text-right text-slate-700">
                             <div className="flex items-center justify-end gap-1">
                               {result.avg_sentiment > 0.2 ? (
-                                <TrendingUp className="w-4 h-4 text-green-500" />
+                                <TrendingUp className="h-4 w-4 text-emerald-500" />
                               ) : result.avg_sentiment < -0.2 ? (
-                                <TrendingDown className="w-4 h-4 text-red-500" />
+                                <TrendingDown className="h-4 w-4 text-rose-500" />
                               ) : (
-                                <Minus className="w-4 h-4 text-gray-500" />
+                                <Minus className="h-4 w-4 text-slate-400" />
                               )}
                               {result.avg_sentiment.toFixed(3)}
                             </div>
                           </td>
-                          <td className="text-right p-2 text-green-600">
-                            {result.positive_count}
+                          <td className="px-4 py-3 text-right text-emerald-600">
+                            {result.positive_count.toLocaleString()}
                           </td>
-                          <td className="text-right p-2 text-red-600">
-                            {result.negative_count}
+                          <td className="px-4 py-3 text-right text-rose-600">
+                            {result.negative_count.toLocaleString()}
                           </td>
-                          <td className="text-right p-2 text-gray-600">
-                            {result.neutral_count}
+                          <td className="px-4 py-3 text-right text-slate-600">
+                            {result.neutral_count.toLocaleString()}
                           </td>
-                          <td className="text-center p-2">
-                            <span
-                              className={`px-2 py-1 rounded text-xs font-medium ${
-                                result.sentiment_label === 'positive'
-                                  ? 'bg-green-100 text-green-800'
+                          <td className="px-4 py-3">
+                            <div className="flex justify-center">
+                              <span
+                                className={`inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-xs font-semibold ${
+                                  result.sentiment_label === 'positive'
+                                    ? 'bg-emerald-50 text-emerald-700'
+                                    : result.sentiment_label === 'negative'
+                                    ? 'bg-rose-50 text-rose-700'
+                                    : 'bg-slate-100 text-slate-700'
+                                }`}
+                              >
+                                {result.sentiment_label === 'positive'
+                                  ? '긍정'
                                   : result.sentiment_label === 'negative'
-                                  ? 'bg-red-100 text-red-800'
-                                  : 'bg-gray-100 text-gray-800'
-                              }`}
-                            >
-                              {result.sentiment_label === 'positive'
-                                ? '긍정'
-                                : result.sentiment_label === 'negative'
-                                ? '부정'
-                                : '중립'}
-                            </span>
+                                  ? '부정'
+                                  : '중립'}
+                              </span>
+                            </div>
                           </td>
                         </tr>
                       ))}
