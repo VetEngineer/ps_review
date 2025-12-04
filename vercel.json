@@ -1,7 +1,0 @@
-{
-  "buildCommand": "cd reviewalyze && npm install && npm run build",
-  "outputDirectory": "reviewalyze/.next",
-  "installCommand": "cd reviewalyze && npm install",
-  "framework": "nextjs"
-}
-
