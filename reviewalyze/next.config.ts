@@ -16,11 +16,18 @@ const nextConfig: NextConfig = {
   webpack: (config) => {
     // Resolve @ alias to src directory
     // This is necessary for Vercel build environment
+    const srcPath = path.resolve(__dirname, 'src');
     config.resolve = config.resolve || {};
     config.resolve.alias = {
       ...(config.resolve.alias || {}),
-      '@': path.resolve(__dirname, 'src'),
+      '@': srcPath,
     };
+    // Ensure modules are resolved correctly
+    config.resolve.modules = [
+      srcPath,
+      ...(config.resolve.modules || []).filter((m: string) => m !== srcPath),
+      'node_modules',
+    ];
     return config;
   },
 };
