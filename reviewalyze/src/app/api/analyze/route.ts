@@ -43,17 +43,21 @@ export async function POST(request: NextRequest) {
 
       console.log('Python API 응답 상태:', response.status, response.statusText);
 
+      // 응답 본문을 텍스트로 먼저 읽기 (한 번만 읽을 수 있음)
+      const responseText = await response.text();
+      console.log('Python API 응답 텍스트:', responseText.substring(0, 500));
+
       let data;
       try {
-        data = await response.json();
+        data = JSON.parse(responseText);
         console.log('Python API 응답 데이터:', data);
       } catch (jsonError) {
-        const text = await response.text();
-        console.error('JSON 파싱 실패:', text);
+        console.error('JSON 파싱 실패:', jsonError);
         return NextResponse.json(
           {
             error: 'Python API 서버 응답을 파싱할 수 없습니다.',
-            details: text.substring(0, 500),
+            details: responseText.substring(0, 500),
+            status: response.status,
           },
           { status: 500 }
         );

@@ -45,7 +45,14 @@ except ImportError as e:
     raise
 
 app = Flask(__name__)
-CORS(app)  # CORS 허용
+# CORS 설정 - 모든 origin 허용 (프로덕션에서는 특정 origin만 허용하도록 수정 권장)
+CORS(app, resources={
+    r"/*": {
+        "origins": "*",
+        "methods": ["GET", "POST", "OPTIONS"],
+        "allow_headers": ["Content-Type", "Authorization"]
+    }
+})
 
 # 전역 변수: 감성분석 모델 (한 번만 로드)
 _sentiment_pipeline = None

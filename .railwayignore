@@ -38,10 +38,8 @@ DEPLOYMENT.md
 README.md
 AGENTS.md
 
-# Next.js 빌드 파일 (Python 서버에는 불필요)
-reviewalyze/.next/
-reviewalyze/out/
-reviewalyze/node_modules/
+# Next.js 폴더 전체 (Python 서버에는 불필요)
+reviewalyze/
 
 # 환경 변수 파일
 .env
