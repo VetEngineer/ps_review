@@ -44,9 +44,14 @@ const nextConfig: NextConfig = {
     
     // Debug logging for Vercel builds
     if (process.env.VERCEL) {
+      const fs = require('fs');
       console.log('[Webpack] Project root:', projectRoot);
       console.log('[Webpack] Source path:', srcPath);
-      console.log('[Webpack] Utils file exists:', require('fs').existsSync(path.join(srcPath, 'lib', 'utils.ts')));
+      console.log('[Webpack] Source dir exists:', fs.existsSync(srcPath));
+      console.log('[Webpack] Lib dir exists:', fs.existsSync(path.join(srcPath, 'lib')));
+      console.log('[Webpack] Lib dir contents:', fs.existsSync(path.join(srcPath, 'lib')) ? fs.readdirSync(path.join(srcPath, 'lib')) : 'N/A');
+      console.log('[Webpack] Utils file exists:', fs.existsSync(path.join(srcPath, 'lib', 'utils.ts')));
+      console.log('[Webpack] Utils file (no ext) exists:', fs.existsSync(path.join(srcPath, 'lib', 'utils')));
       console.log('[Webpack] Extensions:', config.resolve.extensions);
     }
     

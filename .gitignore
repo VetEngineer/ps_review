@@ -51,6 +51,8 @@ eggs/
 .eggs/
 lib/
 lib64/
+# Exception: Don't ignore Next.js src/lib directory
+!reviewalyze/src/lib/
 parts/
 sdist/
 var/
