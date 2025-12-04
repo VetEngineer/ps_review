@@ -15,10 +15,16 @@ const nextConfig: NextConfig = {
   },
   webpack: (config) => {
     // Ensure @/* aliases resolve to src/* even in monorepo/CI builds
+    config.resolve = config.resolve || {};
     config.resolve.alias = {
-      ...config.resolve.alias,
+      ...(config.resolve.alias || {}),
       '@': path.resolve(__dirname, 'src'),
     };
+    // Ensure extensions are resolved
+    config.resolve.extensions = config.resolve.extensions || [];
+    if (!config.resolve.extensions.includes('.ts')) {
+      config.resolve.extensions.push('.ts', '.tsx', '.js', '.jsx');
+    }
     return config;
   },
 };
