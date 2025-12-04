@@ -1,6 +1,6 @@
 "use client";
 
-import { cn } from "../../lib/utils";
+import { cn } from "@/lib/utils";
 import { ChangeEvent, useRef } from "react";
 
 interface FileUploadProps extends React.HTMLAttributes<HTMLDivElement> {
