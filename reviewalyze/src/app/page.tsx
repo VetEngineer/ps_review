@@ -90,15 +90,27 @@ export default function Home() {
       }
       formData.append('keywords', keywordsFile);
 
+      console.log('분석 시작...');
+      
       const response = await fetch('/api/analyze', {
         method: 'POST',
         body: formData,
       });
 
-      const data = await response.json();
+      console.log('응답 상태:', response.status, response.statusText);
+
+      let data;
+      try {
+        data = await response.json();
+        console.log('응답 데이터:', data);
+      } catch (jsonError) {
+        const text = await response.text();
+        console.error('JSON 파싱 실패:', text);
+        throw new Error(`서버 응답을 파싱할 수 없습니다: ${text.substring(0, 200)}`);
+      }
 
       if (!response.ok) {
-        throw new Error(data.error || '분석 중 오류가 발생했습니다.');
+        throw new Error(data.error || data.details || `서버 오류 (${response.status})`);
       }
 
       if (data.success && data.data) {
@@ -115,9 +127,10 @@ export default function Home() {
       }
     } catch (error: any) {
       console.error('Analysis error:', error);
+      const errorMessage = error.message || '분석 중 오류가 발생했습니다.';
       toast({
         title: '분석 실패',
-        description: error.message || '분석 중 오류가 발생했습니다.',
+        description: errorMessage,
         variant: 'destructive',
       });
     } finally {
