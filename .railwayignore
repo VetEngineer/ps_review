@@ -1,0 +1,53 @@
+# Python 가상환경
+venv/
+.venv/
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+
+# Node.js
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# 결과 파일
+results/
+*.json
+
+# 업로드 파일
+uploads/
+
+# 샘플 데이터
+*_sample.csv
+Review_sample_data.csv
+
+# 개발 파일
+.git/
+.gitignore
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# 문서
+DEPLOYMENT.md
+README.md
+AGENTS.md
+
+# Next.js 빌드 파일 (Python 서버에는 불필요)
+reviewalyze/.next/
+reviewalyze/out/
+reviewalyze/node_modules/
+
+# 환경 변수 파일
+.env
+.env.local
+.env.*.local
+
+# 로그 파일
+*.log
+
