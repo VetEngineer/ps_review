@@ -15,7 +15,10 @@ const nextConfig: NextConfig = {
   },
   webpack: (config) => {
     // Ensure @/* aliases resolve to src/* even in monorepo/CI builds
-    config.resolve.alias['@'] = path.join(__dirname, 'src');
+    config.resolve.alias = {
+      ...config.resolve.alias,
+      '@': path.resolve(__dirname, 'src'),
+    };
     return config;
   },
 };
