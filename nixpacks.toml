@@ -8,5 +8,11 @@ cmds = [
   "python -m pip install --no-cache-dir -r requirements.txt"
 ]
 
+[phases.build]
+# 빌드 단계에서도 python -m pip로 명시적으로 실행 (pip 바이너리 경로 문제 방지)
+cmds = [
+  "python -m pip install --no-cache-dir -r requirements.txt"
+]
+
 [start]
 cmd = "python api_server.py"
