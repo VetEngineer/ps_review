@@ -1,6 +1,10 @@
 # 가상환경을 명시적으로 생성하고 활성화한 후 pip를 실행합니다.
 # Nix 환경에서는 가상환경이 생성되기 전에 python -m pip가 작동하지 않을 수 있습니다.
 
+[phases.setup]
+# sentencepiece 빌드에 필요한 빌드 도구 설치
+nixPkgs = ["cmake", "pkg-config"]
+
 [phases.install]
 cmds = [
   "python3 -m venv /opt/venv",
