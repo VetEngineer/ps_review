@@ -1,7 +1,17 @@
 import { NextRequest, NextResponse } from 'next/server';
 
 // Python API 서버 URL (환경 변수에서 가져오거나 기본값 사용)
-const PYTHON_API_URL = process.env.PYTHON_API_URL || 'http://localhost:5000';
+// URL에 프로토콜이 없으면 자동으로 https:// 추가
+function getPythonApiUrl(): string {
+  const url = process.env.PYTHON_API_URL || 'http://localhost:5000';
+  // 프로토콜이 없으면 https:// 추가
+  if (url && !url.startsWith('http://') && !url.startsWith('https://')) {
+    return `https://${url}`;
+  }
+  return url;
+}
+
+const PYTHON_API_URL = getPythonApiUrl();
 
 export async function POST(request: NextRequest) {
   console.log('API 호출 시작', { pythonApiUrl: PYTHON_API_URL });
