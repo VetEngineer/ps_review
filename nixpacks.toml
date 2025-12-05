@@ -1,6 +1,5 @@
-[phases.setup]
-# Nix의 python312는 기본적으로 pip를 포함하지 않으므로 명시적으로 추가 필요
-nixPkgs = ["python312", "python312Packages.pip"]
+# Nixpacks가 기본적으로 Python과 pip를 포함한 가상환경을 자동 생성하므로
+# Nix 패키지 설정을 제거하고 기본 동작을 사용합니다.
 
 [phases.install]
 cmds = [
