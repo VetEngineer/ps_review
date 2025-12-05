@@ -61,6 +61,13 @@ _sentiment_pipeline = None
 def initialize_model():
     """서버 시작 시 모델 로드"""
     global _sentiment_pipeline
+
+    # Render/FREE 플랜 메모리 절약: 기본적으로 HF 모델 로딩을 끔
+    enable_hf = os.environ.get("ENABLE_HF", "false").lower() == "true"
+    if not enable_hf:
+        logger.info("환경변수 ENABLE_HF=false로 설정됨. HuggingFace 모델 로드를 건너뜁니다.")
+        return
+
     if HF_AVAILABLE and _sentiment_pipeline is None:
         try:
             logger.info("감성분석 모델 초기화 중...")
@@ -261,4 +268,3 @@ if __name__ == '__main__':
     
     logger.info(f'서버 시작: port={port}, debug={debug}')
     app.run(host='0.0.0.0', port=port, debug=debug)
-

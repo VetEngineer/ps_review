@@ -181,7 +181,7 @@ def analyze_text_sentiment(text: str, pipeline_obj=None) -> Optional[float]:
 
 
 def calculate_hybrid_sentiment(rating_score: float, text_score: Optional[float], 
-                              rating_weight: float = 0.4, text_weight: float = 0.6) -> float:
+                              rating_weight: float = 0.3, text_weight: float = 0.7) -> float:
     """
     별점과 텍스트 분석 결과를 결합한 하이브리드 감정 스코어 계산
     
