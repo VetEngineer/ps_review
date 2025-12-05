@@ -19,6 +19,7 @@ import {
   Clock3,
   CheckCircle2,
   Info,
+  Download,
 } from 'lucide-react';
 import {
   BarChart,
@@ -35,6 +36,7 @@ import {
 } from 'recharts';
 
 interface AnalysisResult {
+  keyword_group: string;
   keyword: string;
   total_reviews: number;
   avg_sentiment: number;
@@ -47,13 +49,12 @@ interface AnalysisResult {
 
 export default function Home() {
   const { toast } = useToast();
-  const [reviewsFile, setReviewsFile] = useState<File | null>(null);
-  const [keywordsFile, setKeywordsFile] = useState<File | null>(null);
+  const [reviewsDataFile, setReviewsDataFile] = useState<File | null>(null);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [analysisResults, setAnalysisResults] = useState<AnalysisResult[]>([]);
   const [appName, setAppName] = useState<string>('');
 
-  const handleReviewsFileChange = (file: File) => {
+  const handleReviewsDataFileChange = (file: File) => {
     if (!file.name.endsWith('.csv')) {
       toast({
         title: '오류',
@@ -62,23 +63,7 @@ export default function Home() {
       });
       return;
     }
-    setReviewsFile(file);
-    toast({
-      title: '파일 업로드 완료',
-      description: `${file.name} 파일이 업로드되었습니다.`,
-    });
-  };
-
-  const handleKeywordsFileChange = (file: File) => {
-    if (!file.name.endsWith('.csv')) {
-      toast({
-        title: '오류',
-        description: 'CSV 파일만 업로드할 수 있습니다.',
-        variant: 'destructive',
-      });
-      return;
-    }
-    setKeywordsFile(file);
+    setReviewsDataFile(file);
     toast({
       title: '파일 업로드 완료',
       description: `${file.name} 파일이 업로드되었습니다.`,
@@ -86,10 +71,10 @@ export default function Home() {
   };
 
   const handleAnalyze = async () => {
-    if (!keywordsFile) {
+    if (!reviewsDataFile) {
       toast({
         title: '파일 누락',
-        description: '키워드 파일을 업로드해주세요.',
+        description: '전처리된 리뷰 데이터 파일을 업로드해주세요.',
         variant: 'destructive',
       });
       return;
@@ -100,10 +85,7 @@ export default function Home() {
 
     try {
       const formData = new FormData();
-      if (reviewsFile) {
-        formData.append('reviews', reviewsFile);
-      }
-      formData.append('keywords', keywordsFile);
+      formData.append('reviews_data', reviewsDataFile);
 
       const response = await fetch('/api/analyze', {
         method: 'POST',
@@ -161,10 +143,58 @@ export default function Home() {
     }
   };
 
+  const handleDownloadJSON = () => {
+    if (analysisResults.length === 0) {
+      toast({
+        title: '다운로드 불가',
+        description: '분석 결과가 없습니다.',
+        variant: 'destructive',
+      });
+      return;
+    }
+
+    // JSON 형식으로 변환 (사용자 요청 형식에 맞춤)
+    const jsonData = analysisResults.map((result) => ({
+      keyword_group: result.keyword_group,
+      total_reviews: result.total_reviews,
+      avg_sentiment: result.avg_sentiment,
+      positive_count: result.positive_count,
+      negative_count: result.negative_count,
+      neutral_count: result.neutral_count,
+      sentiment_label: result.sentiment_label,
+      app_name: result.app_name || 'unknown_app',
+    }));
+
+    // JSON 문자열 생성
+    const jsonString = JSON.stringify(jsonData, null, 2);
+    
+    // Blob 생성
+    const blob = new Blob([jsonString], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    
+    // 다운로드 링크 생성 및 클릭
+    const link = document.createElement('a');
+    link.href = url;
+    const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, -5);
+    const filename = `analysis_result_${timestamp}.json`;
+    link.download = filename;
+    document.body.appendChild(link);
+    link.click();
+    
+    // 정리
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+    
+    toast({
+      title: '다운로드 완료',
+      description: `${filename} 파일이 다운로드되었습니다.`,
+    });
+  };
+
   const COLORS = ['#10b981', '#ef4444', '#6b7280'];
 
   const sentimentChartData = analysisResults.map((result) => ({
-    keyword: result.keyword,
+    keyword: `${result.keyword_group}: ${result.keyword}`,
     긍정: result.positive_count,
     부정: result.negative_count,
     중립: result.neutral_count,
@@ -311,49 +341,29 @@ export default function Home() {
               <div>
                 <CardTitle>파일 업로드</CardTitle>
                 <CardDescription className="text-slate-600">
-                  키워드 파일은 필수이며, 리뷰 파일을 생략하면 기본 reviews.csv로 분석합니다.
+                  전처리된 리뷰 데이터 CSV 파일을 업로드하여 분석을 시작하세요. 키워드 그룹은 자동으로 적용됩니다.
                 </CardDescription>
               </div>
             </div>
           </CardHeader>
           <CardContent className="space-y-6">
-            <div className="grid gap-4 md:grid-cols-2">
-              <FileUpload
-                onFileChange={handleReviewsFileChange}
-                accept=".csv"
-                className="group relative flex h-full w-full items-start gap-3 rounded-xl border border-dashed border-slate-200 bg-slate-50/70 px-5 py-6 text-left shadow-sm transition hover:-translate-y-0.5 hover:border-indigo-200 hover:bg-white"
-              >
-                <div className="rounded-xl bg-indigo-100 p-3 text-indigo-600 transition group-hover:scale-105 group-hover:bg-indigo-200">
-                  <Upload className="h-6 w-6" />
-                </div>
-                <div className="space-y-1">
-                  <p className="text-sm font-semibold text-slate-900">
-                    {reviewsFile ? reviewsFile.name : 'reviews.csv 업로드 (선택)'}
-                  </p>
-                  <p className="text-xs text-slate-600">
-                    리뷰 데이터 CSV 파일 (미제출 시 기본 데이터 사용)
-                  </p>
-                </div>
-              </FileUpload>
-
-              <FileUpload
-                onFileChange={handleKeywordsFileChange}
-                accept=".csv"
-                className="group relative flex h-full w-full items-start gap-3 rounded-xl border border-dashed border-indigo-200 bg-indigo-50/70 px-5 py-6 text-left shadow-sm transition hover:-translate-y-0.5 hover:border-indigo-300 hover:bg-white"
-              >
-                <div className="rounded-xl bg-indigo-100 p-3 text-indigo-600 transition group-hover:scale-105 group-hover:bg-indigo-200">
-                  <FileText className="h-6 w-6" />
-                </div>
-                <div className="space-y-1">
-                  <p className="text-sm font-semibold text-slate-900">
-                    {keywordsFile ? keywordsFile.name : 'keywords.csv 업로드 (필수)'}
-                  </p>
-                  <p className="text-xs text-slate-600">
-                    키워드 목록 CSV 파일을 업로드해주세요.
-                  </p>
-                </div>
-              </FileUpload>
-            </div>
+            <FileUpload
+              onFileChange={handleReviewsDataFileChange}
+              accept=".csv"
+              className="group relative flex h-full w-full items-start gap-3 rounded-xl border border-dashed border-indigo-200 bg-indigo-50/70 px-5 py-6 text-left shadow-sm transition hover:-translate-y-0.5 hover:border-indigo-300 hover:bg-white"
+            >
+              <div className="rounded-xl bg-indigo-100 p-3 text-indigo-600 transition group-hover:scale-105 group-hover:bg-indigo-200">
+                <Upload className="h-6 w-6" />
+              </div>
+              <div className="space-y-1">
+                <p className="text-sm font-semibold text-slate-900">
+                  {reviewsDataFile ? reviewsDataFile.name : '전처리된 리뷰 데이터 CSV 업로드 (필수)'}
+                </p>
+                <p className="text-xs text-slate-600">
+                  전처리된 리뷰 데이터 CSV 파일 (reviewId, content, score, app_ids 등 포함)
+                </p>
+              </div>
+            </FileUpload>
 
             <div className="flex flex-wrap items-center justify-between gap-4 rounded-xl border border-dashed border-slate-200 bg-slate-50/60 px-4 py-3 text-sm text-slate-600">
               <div className="flex items-center gap-3">
@@ -368,7 +378,7 @@ export default function Home() {
 
             <Button
               onClick={handleAnalyze}
-              disabled={!keywordsFile || isAnalyzing}
+              disabled={!reviewsDataFile || isAnalyzing}
               className="w-full bg-gradient-to-r from-indigo-500 via-blue-500 to-cyan-400 text-white shadow-lg transition hover:shadow-xl"
               size="lg"
             >
@@ -389,6 +399,17 @@ export default function Home() {
 
         {analysisResults.length > 0 && (
           <div className="space-y-6">
+            <div className="flex items-center justify-between">
+              <h2 className="text-2xl font-semibold">분석 결과</h2>
+              <Button
+                onClick={handleDownloadJSON}
+                className="bg-gradient-to-r from-emerald-500 to-teal-500 text-white shadow-md transition hover:shadow-lg"
+              >
+                <Download className="mr-2 h-4 w-4" />
+                JSON 다운로드
+              </Button>
+            </div>
+            
             {appName && (
               <Card className="border-slate-200 bg-white/90 shadow-sm">
                 <CardHeader className="pb-3">
@@ -428,7 +449,7 @@ export default function Home() {
                         주요 키워드
                       </p>
                       <p className="mt-1 text-lg font-semibold text-slate-900">
-                        {topKeyword ? topKeyword.keyword : '—'}
+                        {topKeyword ? `${topKeyword.keyword_group}: ${topKeyword.keyword}` : '—'}
                       </p>
                     </div>
                   </div>
@@ -514,6 +535,7 @@ export default function Home() {
                   <table className="w-full min-w-[700px] text-sm">
                     <thead className="bg-slate-50 text-slate-600">
                       <tr className="border-b border-slate-200">
+                        <th className="px-4 py-3 text-left font-semibold">키워드 그룹</th>
                         <th className="px-4 py-3 text-left font-semibold">키워드</th>
                         <th className="px-4 py-3 text-right font-semibold">총 리뷰</th>
                         <th className="px-4 py-3 text-right font-semibold">평균 감정</th>
@@ -526,6 +548,9 @@ export default function Home() {
                     <tbody className="divide-y divide-slate-200 bg-white">
                       {analysisResults.map((result, index) => (
                         <tr key={index} className="transition hover:bg-slate-50/80">
+                          <td className="px-4 py-3 font-medium text-slate-900">
+                            {result.keyword_group}
+                          </td>
                           <td className="px-4 py-3 font-medium text-slate-900">
                             {result.keyword}
                           </td>

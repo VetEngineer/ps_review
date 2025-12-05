@@ -8,18 +8,16 @@ export async function POST(request: NextRequest) {
   
   try {
     const formData = await request.formData();
-    const reviewsFile = formData.get('reviews') as File | null;
-    const keywordsFile = formData.get('keywords') as File;
+    const reviewsFile = formData.get('reviews_data') as File | null;
 
     console.log('파일 확인:', {
       reviewsFile: reviewsFile ? reviewsFile.name : '없음',
-      keywordsFile: keywordsFile ? keywordsFile.name : '없음',
     });
 
-    if (!keywordsFile) {
-      console.error('키워드 파일이 없습니다.');
+    if (!reviewsFile) {
+      console.error('전처리된 리뷰 데이터 파일이 없습니다.');
       return NextResponse.json(
-        { error: '키워드 파일이 필요합니다.' },
+        { error: '전처리된 리뷰 데이터 파일이 필요합니다.' },
         { status: 400 }
       );
     }
@@ -27,12 +25,9 @@ export async function POST(request: NextRequest) {
     // Python API 서버로 요청 전달
     console.log('Python API 서버로 요청 전송 중...', PYTHON_API_URL);
     
-    // FormData를 그대로 전달
+    // FormData 생성
     const pythonFormData = new FormData();
-    if (reviewsFile) {
-      pythonFormData.append('reviews', reviewsFile);
-    }
-    pythonFormData.append('keywords', keywordsFile);
+    pythonFormData.append('reviews_data', reviewsFile);
 
     try {
       const response = await fetch(`${PYTHON_API_URL}/analyze`, {

@@ -9,6 +9,33 @@ from datetime import datetime
 import warnings
 warnings.filterwarnings('ignore')
 
+# 키워드 그룹 정의
+KEYWORD_GROUPS = {
+    "광고": ["광고", "ad", "애드"],
+    "난이도": ["난이도", "레벨", "difficulty", "쉬움", "어려움"],
+    "과금": ["과금", "결제", "유료", "돈", "아이템"],
+    "오류": ["오류", "버그", "튕김", "멈춤", "강제종료"],
+    "UI": ["UI", "디자인", "화면", "레이아웃", "색감"],
+    "기능 다양성": ["타임어택", "챌린지", "기록", "저장", "모드"]
+}
+
+
+def get_keyword_groups_df() -> pd.DataFrame:
+    """
+    키워드 그룹 딕셔너리를 DataFrame으로 변환
+    
+    Returns:
+        keyword_group과 keyword 컬럼을 가진 DataFrame
+    """
+    rows = []
+    for keyword_group, keywords in KEYWORD_GROUPS.items():
+        for keyword in keywords:
+            rows.append({
+                'keyword_group': keyword_group,
+                'keyword': keyword
+            })
+    return pd.DataFrame(rows)
+
 # 로깅 설정
 logging.basicConfig(
     level=logging.INFO,
@@ -294,6 +321,120 @@ def aggregate_by_keyword(kw_df: pd.DataFrame) -> pd.DataFrame:
                                      "positive_count", "negative_count", "neutral_count"])
     
     summary = kw_df.groupby("keyword").agg(
+        total_reviews=("review_id", "nunique"),
+        avg_sentiment=("sentiment_score", "mean"),
+        positive_count=("sentiment_score", lambda s: (s > 0.2).sum()),
+        negative_count=("sentiment_score", lambda s: (s < -0.2).sum()),
+        neutral_count=("sentiment_score", lambda s: ((s >= -0.2) & (s <= 0.2)).sum())
+    ).reset_index()
+    
+    # 소수점 반올림
+    summary["avg_sentiment"] = summary["avg_sentiment"].round(3)
+    
+    # 감정 라벨 추가
+    summary["sentiment_label"] = summary["avg_sentiment"].apply(
+        lambda x: "positive" if x > 0.2 else ("negative" if x < -0.2 else "neutral")
+    )
+    
+    return summary
+
+
+def match_keyword_groups(reviews: pd.DataFrame, keyword_groups: pd.DataFrame) -> pd.DataFrame:
+    """
+    전처리된 리뷰 데이터와 키워드 그룹을 매칭
+    리뷰 데이터에 이미 키워드 정보가 포함되어 있다고 가정
+    또는 리뷰 텍스트에서 키워드를 찾아 매칭
+    
+    Args:
+        reviews: 전처리된 리뷰 데이터 (review_id, sentiment_score 등 포함)
+        keyword_groups: 키워드 그룹 데이터 (keyword_group, keyword 컬럼 포함)
+    
+    Returns:
+        매칭된 리뷰와 키워드 그룹 정보를 포함한 DataFrame
+    """
+    rows = []
+    
+    # 리뷰 데이터에 키워드 정보가 이미 있는 경우
+    if 'keyword' in reviews.columns or 'keywords' in reviews.columns:
+        keyword_col = 'keyword' if 'keyword' in reviews.columns else 'keywords'
+        
+        for _, review in reviews.iterrows():
+            review_keywords = str(review[keyword_col]).strip()
+            if pd.isna(review_keywords) or not review_keywords:
+                continue
+            
+            # 키워드가 쉼표로 구분되어 있을 수 있음
+            review_keyword_list = [kw.strip() for kw in review_keywords.split(',')]
+            
+            # 키워드 그룹에서 매칭
+            for _, kg_row in keyword_groups.iterrows():
+                kg_keyword = str(kg_row['keyword']).strip()
+                kg_group = str(kg_row['keyword_group']).strip()
+                
+                if kg_keyword in review_keyword_list:
+                    rows.append({
+                        "keyword_group": kg_group,
+                        "keyword": kg_keyword,
+                        "review_id": review["review_id"],
+                        "app_id": review.get("app_id", None),
+                        "sentiment_score": review.get("sentiment_score", 0.0),
+                        "rating": review.get("rating", None),
+                        "text": review.get("text", "")
+                    })
+    else:
+        # 리뷰 텍스트에서 키워드 매칭
+        if 'text' not in reviews.columns and 'clean_text' not in reviews.columns:
+            logger.warning("리뷰 데이터에 키워드나 텍스트 정보가 없습니다.")
+            return pd.DataFrame()
+        
+        text_col = 'clean_text' if 'clean_text' in reviews.columns else 'text'
+        
+        # 텍스트 전처리 (없는 경우)
+        if 'clean_text' not in reviews.columns:
+            reviews['clean_text'] = reviews[text_col].apply(preprocess)
+        
+        for _, kg_row in keyword_groups.iterrows():
+            kg_keyword = str(kg_row['keyword']).strip()
+            kg_group = str(kg_row['keyword_group']).strip()
+            
+            if not kg_keyword:
+                continue
+            
+            # 키워드 매칭
+            escaped_kw = re.escape(kg_keyword)
+            mask = reviews['clean_text'].str.contains(escaped_kw, case=False, na=False, regex=True)
+            matched_reviews = reviews[mask]
+            
+            logger.debug(f"키워드 그룹 '{kg_group}' - 키워드 '{kg_keyword}': {len(matched_reviews)}개 리뷰 매칭")
+            
+            for _, review in matched_reviews.iterrows():
+                rows.append({
+                    "keyword_group": kg_group,
+                    "keyword": kg_keyword,
+                    "review_id": review["review_id"],
+                    "app_id": review.get("app_id", None),
+                    "sentiment_score": review.get("sentiment_score", 0.0),
+                    "rating": review.get("rating", None),
+                    "text": review.get("text", "")
+                })
+    
+    if not rows:
+        logger.warning("매칭된 리뷰가 없습니다.")
+        return pd.DataFrame()
+    
+    return pd.DataFrame(rows)
+
+
+def aggregate_by_keyword_group(kw_df: pd.DataFrame) -> pd.DataFrame:
+    """
+    키워드 그룹별 감정 분석 집계
+    """
+    if kw_df.empty:
+        logger.warning("집계할 데이터가 없습니다.")
+        return pd.DataFrame(columns=["keyword_group", "keyword", "total_reviews", "avg_sentiment", 
+                                     "positive_count", "negative_count", "neutral_count"])
+    
+    summary = kw_df.groupby(["keyword_group", "keyword"]).agg(
         total_reviews=("review_id", "nunique"),
         avg_sentiment=("sentiment_score", "mean"),
         positive_count=("sentiment_score", lambda s: (s > 0.2).sum()),

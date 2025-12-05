@@ -36,7 +36,10 @@ try:
         load_data,
         match_keywords,
         aggregate_by_keyword,
+        match_keyword_groups,
+        aggregate_by_keyword_group,
         get_app_name,
+        get_keyword_groups_df,
         HF_AVAILABLE
     )
 except ImportError as e:
@@ -97,15 +100,16 @@ def analyze_reviews():
     리뷰 분석 API 엔드포인트
     
     요청 형식:
-    - reviews: CSV 파일 (multipart/form-data)
-    - keywords: CSV 파일 (multipart/form-data, 필수)
+    - reviews_data: CSV 파일 (multipart/form-data, 필수)
+      - 전처리된 리뷰 데이터 (reviewId, content, score, app_ids 등 포함)
     
     응답 형식:
     {
         "success": true,
         "data": [
             {
-                "keyword": "렉",
+                "keyword_group": "광고",
+                "keyword": "광고",
                 "total_reviews": 10,
                 "avg_sentiment": -0.5,
                 "positive_count": 0,
@@ -118,109 +122,105 @@ def analyze_reviews():
     }
     """
     try:
-        # 파일 확인
-        if 'keywords' not in request.files:
+        # 리뷰 데이터 파일 확인
+        if 'reviews_data' not in request.files:
             return jsonify({
-                'error': '키워드 파일이 필요합니다.',
+                'error': '전처리된 리뷰 데이터 파일이 필요합니다.',
                 'success': False
             }), 400
         
-        keywords_file = request.files['keywords']
-        reviews_file = request.files.get('reviews', None)
-        
-        if keywords_file.filename == '':
+        reviews_file = request.files['reviews_data']
+        if not reviews_file.filename:
             return jsonify({
-                'error': '키워드 파일이 비어있습니다.',
+                'error': '전처리된 리뷰 데이터 파일이 비어있습니다.',
                 'success': False
             }), 400
         
-        logger.info(f'파일 수신: keywords={keywords_file.filename}, reviews={reviews_file.filename if reviews_file else "없음"}')
+        logger.info(f'파일 수신: reviews_data={reviews_file.filename}')
         
         # 임시 디렉토리 생성
         with tempfile.TemporaryDirectory() as temp_dir:
-            # 파일 저장
-            keywords_path = os.path.join(temp_dir, 'keywords.csv')
-            keywords_file.save(keywords_path)
-            logger.info(f'키워드 파일 저장: {keywords_path}')
+            # 키워드 그룹 데이터 로드 (코드에 하드코딩된 딕셔너리 사용)
+            logger.info('키워드 그룹 데이터 로드 중...')
+            keyword_groups = get_keyword_groups_df()
+            logger.info(f'키워드 그룹 데이터 로드 완료: {len(keyword_groups)}개')
             
-            reviews_path = None
-            if reviews_file and reviews_file.filename:
-                reviews_path = os.path.join(temp_dir, 'reviews.csv')
-                reviews_file.save(reviews_path)
-                logger.info(f'리뷰 파일 저장: {reviews_path}')
-            else:
-                # 기본 reviews.csv 사용 (프로젝트 루트에서 찾기)
-                default_reviews = os.path.join(os.path.dirname(__file__), 'reviews.csv')
-                if os.path.exists(default_reviews):
-                    reviews_path = default_reviews
-                    logger.info(f'기본 리뷰 파일 사용: {reviews_path}')
-                else:
-                    return jsonify({
-                        'error': '리뷰 파일이 업로드되지 않았고 기본 reviews.csv 파일도 찾을 수 없습니다.',
-                        'success': False
-                    }), 400
+            # 전처리된 리뷰 데이터 파일 저장 및 로드
+            reviews_path = os.path.join(temp_dir, 'reviews_data.csv')
+            reviews_file.save(reviews_path)
+            logger.info(f'리뷰 데이터 파일 저장: {reviews_path}')
             
-            # 데이터 로드
-            logger.info('데이터 로드 중...')
-            reviews, keywords = load_data(reviews_path, keywords_path)
+            # CSV를 읽어서 DataFrame으로 변환
+            reviews = pd.read_csv(reviews_path)
+            logger.info(f'리뷰 데이터 로드 완료: {len(reviews)}개')
             
-            # 앱 이름 추출
-            app_name = get_app_name(reviews)
-            logger.info(f'앱 이름: {app_name}')
+            # 컬럼명 매핑 (output_merge.csv 구조에 맞춤)
+            column_mapping = {
+                'reviewId': 'review_id',
+                'content': 'text',
+                'score': 'rating',
+                'app_ids': 'app_id'
+            }
             
-            # 전처리
-            logger.info('리뷰 텍스트 전처리 중...')
-            reviews['clean_text'] = reviews['text'].apply(preprocess)
-            reviews = reviews[reviews['clean_text'].str.len() > 0]
+            # 컬럼명 변경
+            reviews = reviews.rename(columns=column_mapping)
             
-            # 감정 스코어 계산
-            logger.info('감정 스코어 계산 중...')
-            reviews['rating_score'] = reviews['rating'].apply(rating_to_score)
-            
-            # 텍스트 분석 (HuggingFace)
-            if HF_AVAILABLE and _sentiment_pipeline:
-                logger.info('텍스트 기반 감성분석 수행 중...')
-                texts = reviews['clean_text'].tolist()
-                text_scores_list = []
-                
-                for i, text in enumerate(texts):
-                    if (i + 1) % 100 == 0:
-                        logger.info(f'텍스트 분석 진행 중: {i+1}/{len(texts)}')
-                    
-                    score = analyze_text_sentiment(text, _sentiment_pipeline)
-                    text_scores_list.append(score)
-                
-                reviews['text_score'] = text_scores_list
-                logger.info('텍스트 분석 완료')
-            else:
-                reviews['text_score'] = None
-                logger.info('별점 기반 분석만 수행')
-            
-            # 하이브리드 스코어 계산
-            logger.info('하이브리드 감정 스코어 계산 중...')
-            reviews['sentiment_score'] = reviews.apply(
-                lambda row: calculate_hybrid_sentiment(
-                    row['rating_score'],
-                    row.get('text_score'),
-                    rating_weight=0.4,
-                    text_weight=0.6
-                ),
-                axis=1
-            )
-            
-            # 키워드 매칭
-            logger.info('키워드 매칭 중...')
-            kw_df = match_keywords(reviews, keywords)
-            
-            if kw_df.empty:
+            # 필수 컬럼 검증
+            required_cols = ['review_id']
+            missing_cols = [col for col in required_cols if col not in reviews.columns]
+            if missing_cols:
                 return jsonify({
-                    'error': '키워드 매칭 결과가 없습니다. 키워드나 리뷰 데이터를 확인해주세요.',
+                    'error': f'리뷰 데이터에 필수 컬럼이 없습니다: {missing_cols}',
                     'success': False
                 }), 400
             
-            # 키워드별 집계
-            logger.info('키워드별 집계 중...')
-            summary = aggregate_by_keyword(kw_df)
+            # text 컬럼이 없으면 content 컬럼 사용
+            if 'text' not in reviews.columns and 'content' in reviews.columns:
+                reviews['text'] = reviews['content']
+            
+            # rating이 없으면 score 사용
+            if 'rating' not in reviews.columns and 'score' in reviews.columns:
+                reviews['rating'] = reviews['score']
+            
+            # 앱 이름 추출 (리뷰 데이터에 app_id가 있는 경우)
+            app_name = 'unknown_app'
+            if 'app_id' in reviews.columns and not reviews['app_id'].isna().all():
+                app_id = reviews['app_id'].mode()[0] if len(reviews['app_id'].mode()) > 0 else reviews['app_id'].iloc[0]
+                app_name = str(app_id)
+            logger.info(f'앱 이름: {app_name}')
+            
+            # 텍스트 전처리 (키워드 매칭을 위해)
+            if 'text' in reviews.columns:
+                logger.info('리뷰 텍스트 전처리 중...')
+                reviews['clean_text'] = reviews['text'].apply(preprocess)
+                reviews = reviews[reviews['clean_text'].str.len() > 0]
+            else:
+                reviews['clean_text'] = ''
+            
+            # 감정 스코어 계산 (전처리된 데이터에 이미 있을 수 있음)
+            if 'sentiment_score' not in reviews.columns:
+                # sentiment_score가 없으면 rating 기반으로 계산
+                if 'rating' in reviews.columns:
+                    reviews['sentiment_score'] = reviews['rating'].apply(rating_to_score)
+                else:
+                    return jsonify({
+                        'error': '리뷰 데이터에 sentiment_score 또는 rating 컬럼이 필요합니다.',
+                        'success': False
+                    }), 400
+            
+            # 키워드 그룹별 매칭 및 집계
+            logger.info('키워드 그룹별 매칭 및 집계 중...')
+            kw_df = match_keyword_groups(reviews, keyword_groups)
+            
+            if kw_df.empty:
+                return jsonify({
+                    'error': '키워드 그룹 매칭 결과가 없습니다. 키워드 그룹이나 리뷰 데이터를 확인해주세요.',
+                    'success': False
+                }), 400
+            
+            # 키워드 그룹별 집계
+            logger.info('키워드 그룹별 집계 중...')
+            summary = aggregate_by_keyword_group(kw_df)
             
             # 앱 이름 추가
             summary['app_name'] = app_name
