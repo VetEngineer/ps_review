@@ -1,16 +1,16 @@
-# Nixpacks가 기본적으로 Python과 pip를 포함한 가상환경을 자동 생성하므로
-# Nix 패키지 설정을 제거하고 기본 동작을 사용합니다.
+# 가상환경을 명시적으로 생성하고 활성화한 후 pip를 실행합니다.
+# Nix 환경에서는 가상환경이 생성되기 전에 python -m pip가 작동하지 않을 수 있습니다.
 
 [phases.install]
 cmds = [
-  "python -m pip install --no-cache-dir --upgrade pip",
-  "python -m pip install --no-cache-dir -r requirements.txt"
+  "python3 -m venv /opt/venv",
+  ". /opt/venv/bin/activate && pip install --no-cache-dir --upgrade pip",
+  ". /opt/venv/bin/activate && pip install --no-cache-dir -r requirements.txt"
 ]
 
 [phases.build]
-# 빌드 단계에서도 python -m pip로 명시적으로 실행 (pip 바이너리 경로 문제 방지)
 cmds = [
-  "python -m pip install --no-cache-dir -r requirements.txt"
+  ". /opt/venv/bin/activate && pip install --no-cache-dir -r requirements.txt"
 ]
 
 [start]
