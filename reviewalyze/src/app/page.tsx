@@ -87,7 +87,18 @@ export default function Home() {
       const formData = new FormData();
       formData.append('reviews_data', reviewsDataFile);
 
-      const response = await fetch('/api/analyze', {
+      // Railway API 서버 URL (환경 변수 또는 기본값)
+      // NEXT_PUBLIC_ 접두사가 필요 (클라이언트 사이드에서 접근 가능하도록)
+      const pythonApiUrl = process.env.NEXT_PUBLIC_PYTHON_API_URL || 'https://psreview-production.up.railway.app';
+      
+      // URL에 프로토콜이 없으면 자동으로 https:// 추가
+      const apiUrl = pythonApiUrl.startsWith('http://') || pythonApiUrl.startsWith('https://') 
+        ? pythonApiUrl 
+        : `https://${pythonApiUrl}`;
+
+      console.log('Railway API 호출:', `${apiUrl}/analyze`);
+
+      const response = await fetch(`${apiUrl}/analyze`, {
         method: 'POST',
         body: formData,
       });
@@ -131,6 +142,13 @@ export default function Home() {
       if (errorMessage.includes('Python이 설치되어 있지 않습니다') || errorMessage.includes('command not found')) {
         errorMessage = 'Python 실행 환경이 없습니다. 외부 Python API 서버가 필요합니다.';
       }
+
+      // 네트워크 오류인 경우 더 자세한 메시지 제공
+      if (error.message?.includes('fetch failed') || error.message?.includes('Failed to fetch')) {
+        errorMessage = 'Railway API 서버에 연결할 수 없습니다. 서버가 실행 중인지 확인해주세요.';
+      }
+
+      console.error('분석 오류 상세:', error);
 
       toast({
         title: '분석 실패',
