@@ -282,3 +282,6 @@ PORT=3001 npm run dev
 - [Next.js 공식 문서](https://nextjs.org/docs)
 - [Railway 문서](https://docs.railway.app/)
 - [Vercel 문서](https://vercel.com/docs)
+
+
+

@@ -1,6 +1,12 @@
 """
 Flask API 서버 - 리뷰 감정 분석 API
 Railway, Render, Fly.io 등에 배포 가능
+
+환경 변수:
+- PORT: 서버 포트 (기본값: 5000)
+- DEBUG: 디버그 모드 (기본값: False)
+- ENABLE_HF: HuggingFace 모델 사용 여부 (기본값: False)
+- GEMINI_API_KEY: Gemini API 키 (추후 자연어 검색 기능용)
 """
 
 from flask import Flask, request, jsonify
@@ -92,6 +98,58 @@ def health_check():
         'hf_available': HF_AVAILABLE,
         'model_loaded': _sentiment_pipeline is not None
     }), 200
+
+
+# ============================================================================
+# 추후 확장 예정 API 엔드포인트 (PRD 요구사항)
+# ============================================================================
+# 
+# @app.route('/search', methods=['POST'])
+# def natural_language_search():
+#     """
+#     자연어 검색 API 엔드포인트 (추후 구현 예정)
+#     
+#     요청 형식:
+#     {
+#         "query": "아이패드에서 필기감 좋고 PDF 내보내기 무료인 노트 앱 찾아줘",
+#         "weights": {
+#             "광고": 80,
+#             "과금": 90,
+#             ...
+#         }
+#     }
+#     
+#     응답 형식:
+#     {
+#         "success": true,
+#         "apps": [
+#             {
+#                 "app_name": "com.example.app1",
+#                 "ai_score": 8.5,
+#                 "pros": ["장점1", "장점2", "장점3"],
+#                 "cons": ["단점1", "단점2"],
+#                 "features": {
+#                     "PDF 내보내기": "O",
+#                     "무료": "O",
+#                     ...
+#                 }
+#             }
+#         ]
+#     }
+#     """
+#     # 추후 Gemini API 통합 예정
+#     # gemini_api_key = os.environ.get('GEMINI_API_KEY')
+#     pass
+#
+#
+# @app.route('/compare', methods=['POST'])
+# def compare_apps():
+#     """
+#     앱 비교 API 엔드포인트 (추후 구현 예정)
+#     
+#     여러 앱의 리뷰 데이터를 받아 비교표 형태로 반환
+#     """
+#     pass
 
 
 @app.route('/analyze', methods=['POST'])
