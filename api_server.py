@@ -346,7 +346,7 @@ App description:
 
 Summary (한국어로만):"""
             message = client.messages.create(
-                model="claude-sonnet-4-20250514",
+                model="claude-sonnet-4-5",  # Claude Sonnet 4.5 (최신 버전 자동 사용)
                 max_tokens=300,
                 temperature=0.3,
                 messages=[
