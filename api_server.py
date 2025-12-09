@@ -82,6 +82,7 @@ CORS(app, resources={
 # 전역 변수: 감성분석 모델 (한 번만 로드)
 _sentiment_pipeline = None
 _model_loading_lock = None
+_model_loading_failed = False  # 모델 로딩 실패 플래그 (재시도 방지)
 
 # threading 모듈 import (thread-safe 모델 로딩용)
 try:
@@ -92,53 +93,71 @@ except ImportError:
 
 
 def initialize_model():
-    """서버 시작 시 모델 로드 (thread-safe)"""
-    global _sentiment_pipeline
+    """서버 시작 시 모델 로드 (thread-safe, 메모리 안전)"""
+    global _sentiment_pipeline, _model_loading_failed
+
+    # 이미 로드되었거나 실패한 경우 스킵
+    if _sentiment_pipeline is not None:
+        return
+    if _model_loading_failed:
+        logger.debug("모델 로딩이 이전에 실패했습니다. 재시도하지 않습니다.")
+        return
 
     # 기본적으로 HuggingFace 모델 로딩 활성화 (감정 분석 필수)
     enable_hf = os.environ.get("ENABLE_HF", "true").lower() == "true"
     if not enable_hf:
         logger.info("환경변수 ENABLE_HF=false로 설정됨. HuggingFace 모델 로드를 건너뜁니다.")
-        return
-
-    # 이미 로드되었으면 스킵
-    if _sentiment_pipeline is not None:
+        _model_loading_failed = True  # 의도적으로 비활성화된 경우도 플래그 설정
         return
     
     # Thread-safe 모델 로딩
     if _model_loading_lock:
         with _model_loading_lock:
             # Lock 획득 후 다시 확인 (다른 스레드가 이미 로드했을 수 있음)
-            if _sentiment_pipeline is not None:
+            if _sentiment_pipeline is not None or _model_loading_failed:
                 return
             _load_model_internal()
     else:
         # Lock이 없으면 직접 로드
-        if _sentiment_pipeline is None:
+        if _sentiment_pipeline is None and not _model_loading_failed:
             _load_model_internal()
 
 
 def _load_model_internal():
-    """내부 모델 로딩 함수 (메모리 안전)"""
-    global _sentiment_pipeline
+    """내부 모델 로딩 함수 (메모리 안전, 재시도 방지)"""
+    global _sentiment_pipeline, _model_loading_failed
     
-    if HF_AVAILABLE:
-        try:
-            logger.info("감성분석 모델 초기화 중...")
-            # 메모리 부족 시 OSError나 MemoryError 발생 가능
-            _sentiment_pipeline = load_sentiment_model(use_gpu=False)
-            if _sentiment_pipeline:
-                logger.info("감성분석 모델 로드 완료")
-            else:
-                logger.warning("감성분석 모델 로드 실패 - 별점 기반 분석만 사용")
-        except (OSError, MemoryError) as e:
-            logger.error(f"모델 초기화 중 메모리 부족 오류: {e}")
-            logger.warning("별점 기반 분석만 사용합니다. Railway 메모리 제한을 확인하세요.")
-            _sentiment_pipeline = None
-        except Exception as e:
-            logger.error(f"모델 초기화 오류: {e}")
-            logger.warning("별점 기반 분석만 사용합니다.")
-            _sentiment_pipeline = None
+    if not HF_AVAILABLE:
+        logger.warning("HuggingFace를 사용할 수 없습니다. 별점 기반 분석만 사용합니다.")
+        _model_loading_failed = True
+        return
+    
+    try:
+        logger.info("감성분석 모델 초기화 중...")
+        logger.info("⚠️ 모델 로딩은 메모리를 많이 사용합니다. Railway 메모리 제한에 주의하세요.")
+        
+        # 메모리 부족 시 OSError나 MemoryError 발생 가능
+        # 또한 프로세스가 SIGKILL로 종료될 수 있으므로 타임아웃 고려 필요
+        _sentiment_pipeline = load_sentiment_model(use_gpu=False)
+        
+        if _sentiment_pipeline:
+            logger.info("✓ 감성분석 모델 로드 완료")
+        else:
+            logger.warning("✗ 감성분석 모델 로드 실패 - 별점 기반 분석만 사용")
+            _model_loading_failed = True
+            
+    except (OSError, MemoryError) as e:
+        logger.error(f"✗ 모델 초기화 중 메모리 부족 오류: {e}")
+        logger.warning("별점 기반 분석만 사용합니다. Railway 메모리 제한을 확인하세요.")
+        logger.warning("💡 해결 방법: Railway 플랜 업그레이드 또는 ENABLE_HF=false 설정")
+        _sentiment_pipeline = None
+        _model_loading_failed = True  # 재시도 방지
+        
+    except Exception as e:
+        logger.error(f"✗ 모델 초기화 오류: {e}")
+        logger.warning("별점 기반 분석만 사용합니다.")
+        _sentiment_pipeline = None
+        _model_loading_failed = True  # 재시도 방지
 
 
 def summarize_app_intro(intro_text: str) -> str:
@@ -614,11 +633,15 @@ def search_and_collect_endpoint():
 def analyze_reviews():
     # 모델이 필요할 수 있으므로 필요시 로드 (메모리 안전)
     # 메모리 부족 시에도 서버가 계속 작동하도록 try-except로 감쌈
-    if _sentiment_pipeline is None:
+    # _model_loading_failed 플래그로 재시도 방지
+    if _sentiment_pipeline is None and not _model_loading_failed:
         try:
             initialize_model()
         except Exception as e:
             logger.warning(f"모델 로딩 실패 (별점 기반 분석만 사용): {e}")
+            # _load_model_internal에서 이미 플래그를 설정하지만, 여기서도 설정
+            global _model_loading_failed
+            _model_loading_failed = True
     """
     리뷰 분석 API 엔드포인트
     
