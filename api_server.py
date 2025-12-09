@@ -39,15 +39,40 @@ except ImportError:
     logger.warning("python-dotenv 패키지가 설치되지 않았습니다. .env 파일을 자동으로 로드할 수 없습니다.")
 
 # 환경 변수 확인 및 로깅 (디버깅용)
-gemini_key_check = os.environ.get('GEMINI_API_KEY')
-if gemini_key_check:
-    logger.info(f"✓ GEMINI_API_KEY가 설정되어 있습니다. (길이: {len(gemini_key_check)}자, 시작: {gemini_key_check[:10]}...)")
+logger.info("=" * 60)
+logger.info("환경 변수 확인 시작")
+logger.info("=" * 60)
+
+# 모든 환경 변수 키 목록 (디버깅용, 민감한 값은 제외)
+all_env_keys = sorted(os.environ.keys())
+logger.info(f"총 환경 변수 개수: {len(all_env_keys)}")
+
+# GEMINI 관련 환경 변수 확인
+gemini_related = [k for k in all_env_keys if 'GEMINI' in k.upper() or ('GOOGLE' in k.upper() and 'API' in k.upper())]
+if gemini_related:
+    logger.info(f"✓ Gemini 관련 환경 변수 발견: {gemini_related}")
+    for key in gemini_related:
+        value = os.environ.get(key, '')
+        if value:
+            logger.info(f"  - {key}: 길이={len(value)}자, 시작={value[:15]}...")
+        else:
+            logger.warning(f"  - {key}: 값이 비어있음")
 else:
-    logger.warning("✗ GEMINI_API_KEY가 설정되지 않았습니다. Railway Variables에서 확인하세요.")
-    # 모든 환경 변수 목록 출력 (디버깅용)
-    all_env_keys = [k for k in os.environ.keys() if 'GEMINI' in k.upper() or 'API' in k.upper()]
-    if all_env_keys:
-        logger.info(f"관련 환경 변수 발견: {all_env_keys}")
+    logger.warning("✗ Gemini 관련 환경 변수를 찾을 수 없습니다.")
+
+# GEMINI_API_KEY 직접 확인
+gemini_key_check = os.environ.get('GEMINI_API_KEY')
+if gemini_key_check and gemini_key_check.strip():
+    logger.info(f"✓ GEMINI_API_KEY가 설정되어 있습니다. (길이: {len(gemini_key_check)}자, 시작: {gemini_key_check[:15]}...)")
+else:
+    logger.warning("✗ GEMINI_API_KEY가 설정되지 않았거나 비어있습니다.")
+    logger.warning("💡 Railway Variables에서 다음을 확인하세요:")
+    logger.warning("   1. 서비스 레벨에서 Variables 탭 확인 (프로젝트 레벨이 아닌)")
+    logger.warning("   2. 변수 이름이 정확히 'GEMINI_API_KEY'인지 확인 (대소문자 구분)")
+    logger.warning("   3. 값이 비어있지 않은지 확인")
+    logger.warning("   4. 저장 후 재배포 확인")
+
+logger.info("=" * 60)
 
 # Gemini API import
 try:
