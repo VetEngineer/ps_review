@@ -5,8 +5,8 @@ Railway, Render, Fly.io 등에 배포 가능
 환경 변수:
 - PORT: 서버 포트 (기본값: 5000)
 - DEBUG: 디버그 모드 (기본값: False)
-- ENABLE_HF: HuggingFace 모델 사용 여부 (기본값: True, 감정 분석 필수)
-- GEMINI_API_KEY: Gemini API 키 (앱 소개 요약 및 감정 분석 기능용)
+- ENABLE_HF: HuggingFace 모델 사용 여부 (기본값: False, Claude API 사용 권장)
+- CLAUDE_API_KEY: Claude API 키 (앱 소개 요약 및 감정 분석 기능용)
 """
 
 from flask import Flask, request, jsonify
@@ -47,40 +47,40 @@ logger.info("=" * 60)
 all_env_keys = sorted(os.environ.keys())
 logger.info(f"총 환경 변수 개수: {len(all_env_keys)}")
 
-# GEMINI 관련 환경 변수 확인
-gemini_related = [k for k in all_env_keys if 'GEMINI' in k.upper() or ('GOOGLE' in k.upper() and 'API' in k.upper())]
-if gemini_related:
-    logger.info(f"✓ Gemini 관련 환경 변수 발견: {gemini_related}")
-    for key in gemini_related:
+# Claude 관련 환경 변수 확인
+claude_related = [k for k in all_env_keys if 'CLAUDE' in k.upper() or ('ANTHROPIC' in k.upper() and 'API' in k.upper())]
+if claude_related:
+    logger.info(f"✓ Claude 관련 환경 변수 발견: {claude_related}")
+    for key in claude_related:
         value = os.environ.get(key, '')
         if value:
             logger.info(f"  - {key}: 길이={len(value)}자, 시작={value[:15]}...")
         else:
             logger.warning(f"  - {key}: 값이 비어있음")
 else:
-    logger.warning("✗ Gemini 관련 환경 변수를 찾을 수 없습니다.")
+    logger.warning("✗ Claude 관련 환경 변수를 찾을 수 없습니다.")
 
-# GEMINI_API_KEY 직접 확인
-gemini_key_check = os.environ.get('GEMINI_API_KEY')
-if gemini_key_check and gemini_key_check.strip():
-    logger.info(f"✓ GEMINI_API_KEY가 설정되어 있습니다. (길이: {len(gemini_key_check)}자, 시작: {gemini_key_check[:15]}...)")
+# CLAUDE_API_KEY 직접 확인
+claude_key_check = os.environ.get('CLAUDE_API_KEY') or os.environ.get('ANTHROPIC_API_KEY')
+if claude_key_check and claude_key_check.strip():
+    logger.info(f"✓ Claude API 키가 설정되어 있습니다. (길이: {len(claude_key_check)}자, 시작: {claude_key_check[:15]}...)")
 else:
-    logger.warning("✗ GEMINI_API_KEY가 설정되지 않았거나 비어있습니다.")
+    logger.warning("✗ CLAUDE_API_KEY가 설정되지 않았거나 비어있습니다.")
     logger.warning("💡 Railway Variables에서 다음을 확인하세요:")
     logger.warning("   1. 서비스 레벨에서 Variables 탭 확인 (프로젝트 레벨이 아닌)")
-    logger.warning("   2. 변수 이름이 정확히 'GEMINI_API_KEY'인지 확인 (대소문자 구분)")
+    logger.warning("   2. 변수 이름이 정확히 'CLAUDE_API_KEY' 또는 'ANTHROPIC_API_KEY'인지 확인")
     logger.warning("   3. 값이 비어있지 않은지 확인")
     logger.warning("   4. 저장 후 재배포 확인")
 
 logger.info("=" * 60)
 
-# Gemini API import
+# Claude API import
 try:
-    import google.generativeai as genai
-    GEMINI_AVAILABLE = True
+    from anthropic import Anthropic
+    CLAUDE_AVAILABLE = True
 except ImportError:
-    GEMINI_AVAILABLE = False
-    logger.warning("google-generativeai 패키지가 설치되지 않았습니다. Gemini API 기능을 사용할 수 없습니다.")
+    CLAUDE_AVAILABLE = False
+    logger.warning("anthropic 패키지가 설치되지 않았습니다. Claude API 기능을 사용할 수 없습니다.")
 
 # analyse.py의 함수들을 import
 # 같은 디렉토리에 있으므로 직접 import 가능
@@ -139,11 +139,11 @@ def initialize_model():
         logger.debug("모델 로딩이 이전에 실패했습니다. 재시도하지 않습니다.")
         return
 
-    # 기본적으로 HuggingFace 모델 로딩 비활성화 (Gemini API 사용 권장)
+    # 기본적으로 HuggingFace 모델 로딩 비활성화 (Claude API 사용 권장)
     # 메모리 문제를 피하기 위해 기본값을 false로 변경
     enable_hf = os.environ.get("ENABLE_HF", "false").lower() == "true"
     if not enable_hf:
-        logger.info("HuggingFace 모델 로딩이 비활성화되어 있습니다. Gemini API를 사용합니다.")
+        logger.info("HuggingFace 모델 로딩이 비활성화되어 있습니다. Claude API를 사용합니다.")
         logger.info("💡 HuggingFace 모델을 사용하려면 Railway Variables에서 ENABLE_HF=true로 설정하세요.")
         _model_loading_failed = True  # 의도적으로 비활성화된 경우도 플래그 설정
         return
@@ -198,9 +198,9 @@ def _load_model_internal():
         _model_loading_failed = True  # 재시도 방지
 
 
-def analyze_sentiment_with_gemini(text: str) -> Optional[float]:
+def analyze_sentiment_with_claude(text: str) -> Optional[float]:
     """
-    Gemini API를 사용하여 텍스트 감정 분석 수행
+    Claude API를 사용하여 텍스트 감정 분석 수행
     
     Args:
         text: 분석할 텍스트
@@ -211,38 +211,28 @@ def analyze_sentiment_with_gemini(text: str) -> Optional[float]:
     if not text or not text.strip():
         return 0.0
     
-    # Gemini API 키 확인 (여러 방법 시도)
-    gemini_api_key = (
-        os.environ.get('GEMINI_API_KEY') or 
-        os.environ.get('GEMINI_API') or
-        os.environ.get('GOOGLE_API_KEY')
+    # Claude API 키 확인 (여러 방법 시도)
+    claude_api_key = (
+        os.environ.get('CLAUDE_API_KEY') or 
+        os.environ.get('ANTHROPIC_API_KEY')
     )
     
-    if not gemini_api_key:
-        logger.debug("GEMINI_API_KEY가 설정되지 않았습니다. 감정 분석을 건너뜁니다.")
+    if not claude_api_key:
+        logger.debug("CLAUDE_API_KEY가 설정되지 않았습니다. 감정 분석을 건너뜁니다.")
         return None
     
     # API 키가 비어있거나 공백만 있는 경우
-    if not gemini_api_key.strip():
-        logger.warning("GEMINI_API_KEY가 비어있습니다.")
+    if not claude_api_key.strip():
+        logger.warning("CLAUDE_API_KEY가 비어있습니다.")
         return None
     
-    if not GEMINI_AVAILABLE:
-        logger.debug("google-generativeai 패키지가 설치되지 않았습니다. 감정 분석을 건너뜁니다.")
+    if not CLAUDE_AVAILABLE:
+        logger.debug("anthropic 패키지가 설치되지 않았습니다. 감정 분석을 건너뜁니다.")
         return None
     
     try:
-        # Gemini API 설정
-        genai.configure(api_key=gemini_api_key)
-        
-        # 모델 선택 (gemini-2.5-flash 사용, 없으면 gemini-1.5-flash로 fallback)
-        try:
-            model = genai.GenerativeModel('gemini-2.5-flash')
-        except Exception:
-            try:
-                model = genai.GenerativeModel('gemini-1.5-flash')
-            except Exception:
-                model = genai.GenerativeModel('gemini-pro')
+        # Claude API 클라이언트 생성
+        client = Anthropic(api_key=claude_api_key)
         
         # 감정 분석 프롬프트
         prompt = f"""다음 리뷰 텍스트의 감정을 분석해주세요. 
@@ -254,20 +244,18 @@ def analyze_sentiment_with_gemini(text: str) -> Optional[float]:
 
 감정 점수 (-1.0 ~ 1.0):"""
         
-        # API 호출
-        generation_config = {
-            "temperature": 0.1,  # 낮은 temperature로 일관된 결과
-            "top_p": 0.8,
-            "top_k": 40,
-        }
-        
-        response = model.generate_content(
-            prompt,
-            generation_config=generation_config
+        # API 호출 (claude-3-5-sonnet-20241022 또는 claude-3-haiku-20240307 사용)
+        message = client.messages.create(
+            model="claude-3-5-sonnet-20241022",  # 최신 모델 사용
+            max_tokens=50,
+            temperature=0.1,  # 낮은 temperature로 일관된 결과
+            messages=[
+                {"role": "user", "content": prompt}
+            ]
         )
         
         # 응답에서 숫자 추출
-        result_text = response.text.strip()
+        result_text = message.content[0].text.strip()
         
         # 숫자 추출 (정규식 사용)
         numbers = re.findall(r'-?\d+\.?\d*', result_text)
@@ -278,17 +266,17 @@ def analyze_sentiment_with_gemini(text: str) -> Optional[float]:
             score = max(-1.0, min(1.0, score))
             return score
         else:
-            logger.warning(f"Gemini 감정 분석 응답에서 숫자를 찾을 수 없습니다: {result_text}")
+            logger.warning(f"Claude 감정 분석 응답에서 숫자를 찾을 수 없습니다: {result_text}")
             return None
         
     except Exception as e:
-        logger.error(f"Gemini 감정 분석 실패: {e}")
+        logger.error(f"Claude 감정 분석 실패: {e}")
         return None
 
 
 def summarize_app_intro(intro_text: str) -> str:
     """
-    Gemini API를 사용하여 앱 소개 텍스트를 200자 내외의 한국어로 요약
+    Claude API를 사용하여 앱 소개 텍스트를 200자 내외의 한국어로 요약
     
     Args:
         intro_text: 앱 소개 텍스트
@@ -299,40 +287,29 @@ def summarize_app_intro(intro_text: str) -> str:
     if not intro_text or not intro_text.strip():
         return "앱 소개 정보가 없습니다."
     
-    # Gemini API 키 확인 (여러 방법 시도)
-    gemini_api_key = (
-        os.environ.get('GEMINI_API_KEY') or 
-        os.environ.get('GEMINI_API') or
-        os.environ.get('GOOGLE_API_KEY')
+    # Claude API 키 확인 (여러 방법 시도)
+    claude_api_key = (
+        os.environ.get('CLAUDE_API_KEY') or 
+        os.environ.get('ANTHROPIC_API_KEY')
     )
     
-    if not gemini_api_key or not gemini_api_key.strip():
-        logger.warning("GEMINI_API_KEY가 설정되지 않았습니다. 원본 텍스트를 반환합니다.")
-        logger.warning("💡 Railway Variables에서 GEMINI_API_KEY를 확인하세요.")
+    if not claude_api_key or not claude_api_key.strip():
+        logger.warning("CLAUDE_API_KEY가 설정되지 않았습니다. 원본 텍스트를 반환합니다.")
+        logger.warning("💡 Railway Variables에서 CLAUDE_API_KEY를 확인하세요.")
         # 원본이 너무 길면 앞부분만 반환
         if len(intro_text) > 200:
             return intro_text[:197] + "..."
         return intro_text
     
-    if not GEMINI_AVAILABLE:
-        logger.warning("google-generativeai 패키지가 설치되지 않았습니다. 원본 텍스트를 반환합니다.")
+    if not CLAUDE_AVAILABLE:
+        logger.warning("anthropic 패키지가 설치되지 않았습니다. 원본 텍스트를 반환합니다.")
         if len(intro_text) > 200:
             return intro_text[:197] + "..."
         return intro_text
     
     try:
-        # Gemini API 설정
-        genai.configure(api_key=gemini_api_key)
-        
-        # 모델 선택 (gemini-2.5-flash 사용, 없으면 gemini-1.5-flash로 fallback)
-        try:
-            model = genai.GenerativeModel('gemini-2.5-flash')
-        except Exception:
-            try:
-                model = genai.GenerativeModel('gemini-1.5-flash')
-            except Exception:
-                # fallback to gemini-pro
-                model = genai.GenerativeModel('gemini-pro')
+        # Claude API 클라이언트 생성
+        client = Anthropic(api_key=claude_api_key)
         
         # 요약 프롬프트 (한국어로 강제)
         prompt = f"""다음 앱 소개 텍스트를 200자 내외의 간결한 한국어로 요약해주세요. 
@@ -344,20 +321,18 @@ def summarize_app_intro(intro_text: str) -> str:
 
 요약 (한국어로만 작성):"""
         
-        # API 호출 (한국어 응답 강제)
-        generation_config = {
-            "temperature": 0.3,
-            "top_p": 0.8,
-            "top_k": 40,
-        }
-        
-        response = model.generate_content(
-            prompt,
-            generation_config=generation_config
+        # API 호출 (claude-3-5-sonnet-20241022 사용)
+        message = client.messages.create(
+            model="claude-3-5-sonnet-20241022",
+            max_tokens=300,
+            temperature=0.3,
+            messages=[
+                {"role": "user", "content": prompt}
+            ]
         )
         
         # 응답 추출
-        summary = response.text.strip()
+        summary = message.content[0].text.strip()
         
         # 응답이 영어인지 확인하고 재요청
         if summary and not any('\uac00' <= char <= '\ud7a3' for char in summary[:50]):
@@ -370,8 +345,15 @@ App description:
 {intro_text}
 
 Summary (한국어로만):"""
-            response = model.generate_content(prompt_korean, generation_config=generation_config)
-            summary = response.text.strip()
+            message = client.messages.create(
+                model="claude-3-5-sonnet-20241022",
+                max_tokens=300,
+                temperature=0.3,
+                messages=[
+                    {"role": "user", "content": prompt_korean}
+                ]
+            )
+            summary = message.content[0].text.strip()
         
         # 길이 제한 (200자 내외)
         if len(summary) > 220:
@@ -381,7 +363,7 @@ Summary (한국어로만):"""
         return summary
         
     except Exception as e:
-        logger.error(f"Gemini API 요약 실패: {e}", exc_info=True)
+        logger.error(f"Claude API 요약 실패: {e}", exc_info=True)
         # 에러 발생 시 원본 텍스트 반환 (길이 제한)
         if len(intro_text) > 200:
             return intro_text[:197] + "..."
@@ -397,7 +379,7 @@ def health_check():
         'status': 'healthy',
         'hf_available': HF_AVAILABLE,
         'model_loaded': _sentiment_pipeline is not None,
-        'gemini_available': GEMINI_AVAILABLE,
+        'claude_available': CLAUDE_AVAILABLE,
         'crawler_available': CRAWLER_AVAILABLE
     }), 200
 
@@ -669,7 +651,7 @@ def search_and_collect_endpoint():
                 'message': '검색된 앱이 없습니다.'
             }), 200
         
-        # 1.5. 각 앱의 소개를 Gemini API로 요약하여 ai_summary 추가
+        # 1.5. 각 앱의 소개를 Claude API로 요약하여 ai_summary 추가
         logger.info(f'{len(apps)}개 앱의 소개 요약 시작...')
         for app in apps:
             intro_text = app.get('intro', '')
@@ -749,8 +731,8 @@ def search_and_collect_endpoint():
 #         ]
 #     }
 #     """
-#     # 추후 Gemini API 통합 예정
-#     # gemini_api_key = os.environ.get('GEMINI_API_KEY')
+#     # 추후 Claude API 통합 예정
+#     # claude_api_key = os.environ.get('CLAUDE_API_KEY')
 #     pass
 #
 #
@@ -766,9 +748,9 @@ def search_and_collect_endpoint():
 
 @app.route('/analyze', methods=['POST'])
 def analyze_reviews():
-    # HuggingFace 모델 로딩 제거 - Gemini API만 사용
+    # HuggingFace 모델 로딩 제거 - Claude API만 사용
     # 메모리 문제를 피하기 위해 HuggingFace 모델은 사용하지 않음
-    # Gemini API가 없으면 별점 기반 분석만 사용
+    # Claude API가 없으면 별점 기반 분석만 사용
     """
     리뷰 분석 API 엔드포인트
     
@@ -874,60 +856,59 @@ def analyze_reviews():
             if 'sentiment_score' not in reviews.columns:
                 logger.info('감정 스코어 계산 중...')
                 
-                # Gemini API를 사용한 감정 분석 시도 (여러 환경 변수 이름 확인)
-                gemini_api_key = (
-                    os.environ.get('GEMINI_API_KEY') or 
-                    os.environ.get('GEMINI_API') or
-                    os.environ.get('GOOGLE_API_KEY')
+                # Claude API를 사용한 감정 분석 시도 (여러 환경 변수 이름 확인)
+                claude_api_key = (
+                    os.environ.get('CLAUDE_API_KEY') or 
+                    os.environ.get('ANTHROPIC_API_KEY')
                 )
-                use_gemini = gemini_api_key and gemini_api_key.strip() and GEMINI_AVAILABLE
+                use_claude = claude_api_key and claude_api_key.strip() and CLAUDE_AVAILABLE
                 
-                if gemini_api_key:
-                    logger.info(f"✓ Gemini API 키 발견 (길이: {len(gemini_api_key)}자)")
+                if claude_api_key:
+                    logger.info(f"✓ Claude API 키 발견 (길이: {len(claude_api_key)}자)")
                 else:
-                    logger.warning("✗ Gemini API 키를 찾을 수 없습니다. 별점 기반 분석만 사용합니다.")
-                    logger.warning("💡 Railway Variables에서 GEMINI_API_KEY를 확인하세요.")
+                    logger.warning("✗ Claude API 키를 찾을 수 없습니다. 별점 기반 분석만 사용합니다.")
+                    logger.warning("💡 Railway Variables에서 CLAUDE_API_KEY를 확인하세요.")
                 
-                if use_gemini:
-                    logger.info('Gemini API를 사용하여 감정 분석 수행 중...')
+                if use_claude:
+                    logger.info('Claude API를 사용하여 감정 분석 수행 중...')
                     logger.info(f'총 {len(reviews)}개 리뷰 분석 예정')
                     
                     sentiment_scores = []
                     total_reviews = len(reviews)
-                    gemini_success_count = 0
-                    gemini_fail_count = 0
+                    claude_success_count = 0
+                    claude_fail_count = 0
                     
                     for idx, row in reviews.iterrows():
                         # 진행 상황 로깅 (50개마다)
                         if (idx + 1) % 50 == 0:
-                            logger.info(f'감정 분석 진행 중: {idx+1}/{total_reviews} (Gemini 성공: {gemini_success_count}, 실패: {gemini_fail_count})')
+                            logger.info(f'감정 분석 진행 중: {idx+1}/{total_reviews} (Claude 성공: {claude_success_count}, 실패: {claude_fail_count})')
                         
                         text = row.get('text', '') or row.get('content', '')
                         rating = row.get('rating', 3)
                         rating_score = rating_to_score(rating) if 'rating' in row else 0.0
                         
                         if text and len(text.strip()) > 0:
-                            # Gemini로 감정 분석 시도
-                            gemini_score = analyze_sentiment_with_gemini(text)
+                            # Claude로 감정 분석 시도
+                            claude_score = analyze_sentiment_with_claude(text)
                             
-                            if gemini_score is not None:
-                                gemini_success_count += 1
-                                # 하이브리드 스코어: Gemini 70%, 별점 30%
-                                hybrid_score = gemini_score * 0.7 + rating_score * 0.3
+                            if claude_score is not None:
+                                claude_success_count += 1
+                                # 하이브리드 스코어: Claude 70%, 별점 30%
+                                hybrid_score = claude_score * 0.7 + rating_score * 0.3
                                 sentiment_scores.append(hybrid_score)
                             else:
-                                gemini_fail_count += 1
-                                # Gemini 실패 시 별점만 사용
+                                claude_fail_count += 1
+                                # Claude 실패 시 별점만 사용
                                 sentiment_scores.append(rating_score)
                         else:
                             # 텍스트가 없으면 별점만 사용
                             sentiment_scores.append(rating_score)
                     
                     reviews['sentiment_score'] = sentiment_scores
-                    logger.info(f'Gemini 기반 감정 분석 완료: 성공 {gemini_success_count}개, 실패 {gemini_fail_count}개, 별점만 사용 {total_reviews - gemini_success_count - gemini_fail_count}개')
+                    logger.info(f'Claude 기반 감정 분석 완료: 성공 {claude_success_count}개, 실패 {claude_fail_count}개, 별점만 사용 {total_reviews - claude_success_count - claude_fail_count}개')
                 else:
-                    # Gemini를 사용할 수 없으면 별점 기반으로만 계산
-                    logger.info('Gemini API를 사용할 수 없습니다. 별점 기반 감정 분석만 수행합니다.')
+                    # Claude를 사용할 수 없으면 별점 기반으로만 계산
+                    logger.info('Claude API를 사용할 수 없습니다. 별점 기반 감정 분석만 수행합니다.')
                     if 'rating' in reviews.columns:
                         reviews['sentiment_score'] = reviews['rating'].apply(rating_to_score)
                     else:
