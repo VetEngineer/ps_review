@@ -235,11 +235,14 @@ def analyze_sentiment_with_gemini(text: str) -> Optional[float]:
         # Gemini API 설정
         genai.configure(api_key=gemini_api_key)
         
-        # 모델 선택 (gemini-1.5-flash가 더 빠르고 경제적)
+        # 모델 선택 (gemini-2.5-flash 사용, 없으면 gemini-1.5-flash로 fallback)
         try:
-            model = genai.GenerativeModel('gemini-1.5-flash')
+            model = genai.GenerativeModel('gemini-2.5-flash')
         except Exception:
-            model = genai.GenerativeModel('gemini-pro')
+            try:
+                model = genai.GenerativeModel('gemini-1.5-flash')
+            except Exception:
+                model = genai.GenerativeModel('gemini-pro')
         
         # 감정 분석 프롬프트
         prompt = f"""다음 리뷰 텍스트의 감정을 분석해주세요. 
@@ -321,12 +324,15 @@ def summarize_app_intro(intro_text: str) -> str:
         # Gemini API 설정
         genai.configure(api_key=gemini_api_key)
         
-        # 모델 선택 (gemini-pro 또는 gemini-1.5-flash)
+        # 모델 선택 (gemini-2.5-flash 사용, 없으면 gemini-1.5-flash로 fallback)
         try:
-            model = genai.GenerativeModel('gemini-1.5-flash')
+            model = genai.GenerativeModel('gemini-2.5-flash')
         except Exception:
-            # fallback to gemini-pro
-            model = genai.GenerativeModel('gemini-pro')
+            try:
+                model = genai.GenerativeModel('gemini-1.5-flash')
+            except Exception:
+                # fallback to gemini-pro
+                model = genai.GenerativeModel('gemini-pro')
         
         # 요약 프롬프트 (한국어로 강제)
         prompt = f"""다음 앱 소개 텍스트를 200자 내외의 간결한 한국어로 요약해주세요. 
