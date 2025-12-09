@@ -147,7 +147,7 @@ export function WeightAdjustment({
         <div className="rounded-lg border border-slate-200 bg-slate-50 p-4">
           <p className="text-xs text-slate-600">
             <strong>팁:</strong> 가중치를 조정하면 해당 항목이 추천 점수 계산에 더 큰 영향을 미칩니다.
-            예를 들어, '광고' 항목의 가중치를 높이면 광고가 없는 앱이 더 높은 점수를 받습니다.
+            예를 들어, &apos;광고&apos; 항목의 가중치를 높이면 광고가 없는 앱이 더 높은 점수를 받습니다.
           </p>
         </div>
       </CardContent>
