@@ -244,9 +244,9 @@ def analyze_sentiment_with_claude(text: str) -> Optional[float]:
 
 감정 점수 (-1.0 ~ 1.0):"""
         
-        # API 호출 (claude-3-5-sonnet-20241022 또는 claude-3-haiku-20240307 사용)
+        # API 호출 (claude-sonnet-4-5 사용 - Sonnet 4.5)
         message = client.messages.create(
-            model="claude-3-5-sonnet-20241022",  # 최신 모델 사용
+            model="claude-sonnet-4-5",  # Claude Sonnet 4.5 (최신 버전 자동 사용)
             max_tokens=50,
             temperature=0.1,  # 낮은 temperature로 일관된 결과
             messages=[
@@ -321,9 +321,9 @@ def summarize_app_intro(intro_text: str) -> str:
 
 요약 (한국어로만 작성):"""
         
-        # API 호출 (claude-3-5-sonnet-20241022 사용)
+        # API 호출 (claude-sonnet-4-5 사용 - Sonnet 4.5)
         message = client.messages.create(
-            model="claude-3-5-sonnet-20241022",
+            model="claude-sonnet-4-5",  # Claude Sonnet 4.5 (최신 버전 자동 사용)
             max_tokens=300,
             temperature=0.3,
             messages=[
@@ -346,7 +346,7 @@ App description:
 
 Summary (한국어로만):"""
             message = client.messages.create(
-                model="claude-3-5-sonnet-20241022",
+                model="claude-sonnet-4-20250514",
                 max_tokens=300,
                 temperature=0.3,
                 messages=[
