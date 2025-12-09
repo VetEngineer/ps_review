@@ -93,7 +93,7 @@ export function AppKeywordSearch({
             className="text-base"
           />
           <Button
-            onClick={handleSearch}
+            onClick={() => handleSearch()}
             disabled={disabled || isSearching || !keyword.trim()}
             className="bg-gradient-to-r from-indigo-500 via-blue-500 to-cyan-400 text-white shadow-lg transition hover:shadow-xl"
             size="lg"
