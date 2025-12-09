@@ -6,7 +6,7 @@ Railway, Render, Fly.io 등에 배포 가능
 - PORT: 서버 포트 (기본값: 5000)
 - DEBUG: 디버그 모드 (기본값: False)
 - ENABLE_HF: HuggingFace 모델 사용 여부 (기본값: True, 감정 분석 필수)
-- GEMINI_API_KEY: Gemini API 키 (앱 소개 요약 기능용)
+- GEMINI_API_KEY: Gemini API 키 (앱 소개 요약 및 감정 분석 기능용)
 """
 
 from flask import Flask, request, jsonify
@@ -158,6 +158,81 @@ def _load_model_internal():
         logger.warning("별점 기반 분석만 사용합니다.")
         _sentiment_pipeline = None
         _model_loading_failed = True  # 재시도 방지
+
+
+def analyze_sentiment_with_gemini(text: str) -> Optional[float]:
+    """
+    Gemini API를 사용하여 텍스트 감정 분석 수행
+    
+    Args:
+        text: 분석할 텍스트
+        
+    Returns:
+        -1.0 (부정) ~ 1.0 (긍정) 사이의 감정 스코어, None (분석 실패)
+    """
+    if not text or not text.strip():
+        return 0.0
+    
+    # Gemini API 키 확인
+    gemini_api_key = os.environ.get('GEMINI_API_KEY')
+    if not gemini_api_key:
+        logger.debug("GEMINI_API_KEY가 설정되지 않았습니다. 감정 분석을 건너뜁니다.")
+        return None
+    
+    if not GEMINI_AVAILABLE:
+        logger.debug("google-generativeai 패키지가 설치되지 않았습니다. 감정 분석을 건너뜁니다.")
+        return None
+    
+    try:
+        # Gemini API 설정
+        genai.configure(api_key=gemini_api_key)
+        
+        # 모델 선택 (gemini-1.5-flash가 더 빠르고 경제적)
+        try:
+            model = genai.GenerativeModel('gemini-1.5-flash')
+        except Exception:
+            model = genai.GenerativeModel('gemini-pro')
+        
+        # 감정 분석 프롬프트
+        prompt = f"""다음 리뷰 텍스트의 감정을 분석해주세요. 
+텍스트가 긍정적인지 부정적인지 판단하여 -1.0 (매우 부정)부터 1.0 (매우 긍정) 사이의 숫자로만 응답해주세요.
+소수점 한 자리까지 표시해주세요. (예: 0.5, -0.3, 1.0, -1.0)
+
+리뷰 텍스트:
+{text}
+
+감정 점수 (-1.0 ~ 1.0):"""
+        
+        # API 호출
+        generation_config = {
+            "temperature": 0.1,  # 낮은 temperature로 일관된 결과
+            "top_p": 0.8,
+            "top_k": 40,
+        }
+        
+        response = model.generate_content(
+            prompt,
+            generation_config=generation_config
+        )
+        
+        # 응답에서 숫자 추출
+        result_text = response.text.strip()
+        
+        # 숫자 추출 (정규식 사용)
+        numbers = re.findall(r'-?\d+\.?\d*', result_text)
+        
+        if numbers:
+            score = float(numbers[0])
+            # 범위 제한 (-1.0 ~ 1.0)
+            score = max(-1.0, min(1.0, score))
+            return score
+        else:
+            logger.warning(f"Gemini 감정 분석 응답에서 숫자를 찾을 수 없습니다: {result_text}")
+            return None
+        
+    except Exception as e:
+        logger.error(f"Gemini 감정 분석 실패: {e}")
+        return None
 
 
 def summarize_app_intro(intro_text: str) -> str:
@@ -745,14 +820,59 @@ def analyze_reviews():
             
             # 감정 스코어 계산 (전처리된 데이터에 이미 있을 수 있음)
             if 'sentiment_score' not in reviews.columns:
-                # sentiment_score가 없으면 rating 기반으로 계산
-                if 'rating' in reviews.columns:
-                    reviews['sentiment_score'] = reviews['rating'].apply(rating_to_score)
+                logger.info('감정 스코어 계산 중...')
+                
+                # Gemini API를 사용한 감정 분석 시도
+                gemini_api_key = os.environ.get('GEMINI_API_KEY')
+                use_gemini = gemini_api_key and GEMINI_AVAILABLE
+                
+                if use_gemini:
+                    logger.info('Gemini API를 사용하여 감정 분석 수행 중...')
+                    logger.info(f'총 {len(reviews)}개 리뷰 분석 예정')
+                    
+                    sentiment_scores = []
+                    total_reviews = len(reviews)
+                    gemini_success_count = 0
+                    gemini_fail_count = 0
+                    
+                    for idx, row in reviews.iterrows():
+                        # 진행 상황 로깅 (50개마다)
+                        if (idx + 1) % 50 == 0:
+                            logger.info(f'감정 분석 진행 중: {idx+1}/{total_reviews} (Gemini 성공: {gemini_success_count}, 실패: {gemini_fail_count})')
+                        
+                        text = row.get('text', '') or row.get('content', '')
+                        rating = row.get('rating', 3)
+                        rating_score = rating_to_score(rating) if 'rating' in row else 0.0
+                        
+                        if text and len(text.strip()) > 0:
+                            # Gemini로 감정 분석 시도
+                            gemini_score = analyze_sentiment_with_gemini(text)
+                            
+                            if gemini_score is not None:
+                                gemini_success_count += 1
+                                # 하이브리드 스코어: Gemini 70%, 별점 30%
+                                hybrid_score = gemini_score * 0.7 + rating_score * 0.3
+                                sentiment_scores.append(hybrid_score)
+                            else:
+                                gemini_fail_count += 1
+                                # Gemini 실패 시 별점만 사용
+                                sentiment_scores.append(rating_score)
+                        else:
+                            # 텍스트가 없으면 별점만 사용
+                            sentiment_scores.append(rating_score)
+                    
+                    reviews['sentiment_score'] = sentiment_scores
+                    logger.info(f'Gemini 기반 감정 분석 완료: 성공 {gemini_success_count}개, 실패 {gemini_fail_count}개, 별점만 사용 {total_reviews - gemini_success_count - gemini_fail_count}개')
                 else:
-                    return jsonify({
-                        'error': '리뷰 데이터에 sentiment_score 또는 rating 컬럼이 필요합니다.',
-                        'success': False
-                    }), 400
+                    # Gemini를 사용할 수 없으면 별점 기반으로만 계산
+                    logger.info('Gemini API를 사용할 수 없습니다. 별점 기반 감정 분석만 수행합니다.')
+                    if 'rating' in reviews.columns:
+                        reviews['sentiment_score'] = reviews['rating'].apply(rating_to_score)
+                    else:
+                        return jsonify({
+                            'error': '리뷰 데이터에 sentiment_score 또는 rating 컬럼이 필요합니다.',
+                            'success': False
+                        }), 400
             
             # 키워드 그룹별 매칭 및 집계
             logger.info('키워드 그룹별 매칭 및 집계 중...')
