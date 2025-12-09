@@ -706,6 +706,8 @@ def search_and_collect_endpoint():
 
 @app.route('/analyze', methods=['POST'])
 def analyze_reviews():
+    global _model_loading_failed
+    
     # 모델이 필요할 수 있으므로 필요시 로드 (메모리 안전)
     # 메모리 부족 시에도 서버가 계속 작동하도록 try-except로 감쌈
     # _model_loading_failed 플래그로 재시도 방지
@@ -715,7 +717,6 @@ def analyze_reviews():
         except Exception as e:
             logger.warning(f"모델 로딩 실패 (별점 기반 분석만 사용): {e}")
             # _load_model_internal에서 이미 플래그를 설정하지만, 여기서도 설정
-            global _model_loading_failed
             _model_loading_failed = True
     """
     리뷰 분석 API 엔드포인트
