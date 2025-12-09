@@ -784,12 +784,7 @@ if __name__ == '__main__':
     logger.info(f'서버 시작: port={port}, debug={debug}')
     app.run(host='0.0.0.0', port=port, debug=debug)
 
-# Gunicorn 사용 시: 각 워커 프로세스가 시작될 때 모델 로딩
-# 모듈 레벨에서 실행되므로 Gunicorn 워커 시작 시 자동 실행됨
-# 단, 헬스체크는 모델 로딩 없이도 응답 가능하도록 설계됨
-try:
-    # Gunicorn 환경에서도 모델을 미리 로드하려면 여기서 호출
-    # 하지만 메모리 제약이 있으면 지연 로딩도 가능
-    # initialize_model()  # 주석 처리: 필요시 헬스체크나 첫 요청 시 로드
-except Exception as e:
-    logger.warning(f"서버 시작 시 모델 로딩 실패 (지연 로딩으로 전환): {e}")
+# Gunicorn 사용 시: 모델 로딩은 지연 로딩 방식으로 처리됨
+# - 헬스체크는 모델 로딩 없이도 즉시 응답 가능
+# - 실제 분석 요청 시 필요하면 자동으로 모델 로드됨
+# - 메모리 절약 및 서버 시작 시간 단축
