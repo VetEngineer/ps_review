@@ -24,8 +24,10 @@ export function AppKeywordSearch({
   const [isSearching, setIsSearching] = useState(false);
   const { toast } = useToast();
 
-  const handleSearch = async () => {
-    if (!keyword.trim()) {
+  const handleSearch = async (searchKeyword?: string) => {
+    const keywordToSearch = searchKeyword || keyword;
+    
+    if (!keywordToSearch.trim()) {
       toast({
         title: '키워드를 입력해주세요',
         description: '검색할 앱의 키워드를 입력해주세요.',
@@ -37,7 +39,7 @@ export function AppKeywordSearch({
     setIsSearching(true);
     try {
       if (onSearch) {
-        await onSearch(keyword.trim());
+        await onSearch(keywordToSearch.trim());
       } else {
         await new Promise((resolve) => setTimeout(resolve, 1000));
         toast({
@@ -58,6 +60,7 @@ export function AppKeywordSearch({
 
   const handleExampleClick = (example: string) => {
     setKeyword(example);
+    handleSearch(example);
   };
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {

@@ -7,6 +7,9 @@ import { useToast } from '../hooks/use-toast';
 import { AppKeywordSearch } from '../components/search/AppKeywordSearch';
 import { ComparisonTable, ComparisonData } from '../components/comparison/ComparisonTable';
 import { AppCard } from '../components/comparison/AppCard';
+
+// Python API 서버 URL
+const PYTHON_API_URL = process.env.NEXT_PUBLIC_PYTHON_API_URL || 'http://localhost:5001';
 import {
   BarChart3,
   TrendingUp,
@@ -56,114 +59,154 @@ export default function Home() {
     setComparisonData([]);
 
     try {
-      // 추후 백엔드 API 연결 예정.
-      // 현재는 모의 데이터로 비교 UI를 확인합니다.
-      await new Promise((resolve) => setTimeout(resolve, 400));
+      toast({
+        title: '앱 검색 중',
+        description: '키워드로 앱을 검색하고 리뷰를 수집하는 중입니다...',
+      });
 
-      const mockResults: AnalysisResult[] = [
-        {
-          keyword_group: '광고',
-          keyword: '광고',
-          total_reviews: 120,
-          avg_sentiment: -0.35,
-          positive_count: 10,
-          negative_count: 90,
-          neutral_count: 20,
-          sentiment_label: 'negative',
-          app_name: `${keyword} 앱`,
+      // 1. 앱 검색 및 리뷰 수집
+      const searchResponse = await fetch(`${PYTHON_API_URL}/api/search-and-collect`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
         },
-        {
-          keyword_group: 'UI',
-          keyword: '디자인',
-          total_reviews: 80,
-          avg_sentiment: 0.45,
-          positive_count: 55,
-          negative_count: 10,
-          neutral_count: 15,
-          sentiment_label: 'positive',
-          app_name: `${keyword} 앱`,
-        },
-        {
-          keyword_group: '기능 다양성',
-          keyword: '기능',
-          total_reviews: 70,
-          avg_sentiment: 0.1,
-          positive_count: 25,
-          negative_count: 20,
-          neutral_count: 25,
-          sentiment_label: 'neutral',
-          app_name: `${keyword} 앱`,
-        },
-      ];
+        body: JSON.stringify({
+          keyword: keyword,
+          max_apps: 10,
+          max_reviews: 150,
+          months: 6,
+        }),
+      });
 
-      const keywordGroups: ComparisonData['keyword_groups'] = {};
-      mockResults.forEach((result) => {
-        keywordGroups[result.keyword_group] = {
-          avg_sentiment: result.avg_sentiment,
-          total_reviews: result.total_reviews,
-          sentiment_label: result.sentiment_label,
+      if (!searchResponse.ok) {
+        const errorData = await searchResponse.json().catch(() => ({}));
+        throw new Error(errorData.error || `앱 검색 실패: ${searchResponse.status}`);
+      }
+
+      const searchData = await searchResponse.json();
+      
+      if (!searchData.success || !searchData.reviews || searchData.reviews.length === 0) {
+        throw new Error(searchData.message || '수집된 리뷰가 없습니다.');
+      }
+
+      toast({
+        title: '리뷰 수집 완료',
+        description: `${searchData.app_count}개 앱에서 ${searchData.review_count}개의 리뷰를 수집했습니다. 분석을 시작합니다...`,
+      });
+
+      // 2. 리뷰 데이터를 CSV 형식으로 변환
+      const reviews = searchData.reviews;
+      const csvHeaders = ['reviewId', 'content', 'score', 'date', 'app_id'];
+      const csvRows = reviews.map((review: any) => [
+        review.reviewId || '',
+        review.content || '',
+        review.score || '',
+        review.date || '',
+        review.app_id || '',
+      ]);
+      
+      const csvContent = [
+        csvHeaders.join(','),
+        ...csvRows.map((row: any[]) => row.map(cell => `"${String(cell).replace(/"/g, '""')}"`).join(','))
+      ].join('\n');
+
+      // 3. CSV를 Blob으로 변환하여 FormData 생성
+      const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+      const formData = new FormData();
+      formData.append('reviews_data', blob, 'reviews.csv');
+
+      // 4. 분석 API 호출
+      const analyzeResponse = await fetch('/api/analyze', {
+        method: 'POST',
+        body: formData,
+      });
+
+      if (!analyzeResponse.ok) {
+        const errorData = await analyzeResponse.json().catch(() => ({}));
+        throw new Error(errorData.error || `분석 실패: ${analyzeResponse.status}`);
+      }
+
+      const analyzeData = await analyzeResponse.json();
+
+      if (!analyzeData.success || !analyzeData.data || analyzeData.data.length === 0) {
+        throw new Error('분석 결과가 없습니다.');
+      }
+
+      // 5. 분석 결과를 UI 형식에 맞게 변환
+      const analysisResults: AnalysisResult[] = analyzeData.data.map((item: any) => ({
+        keyword_group: item.keyword_group || item.keyword || '기타',
+        keyword: item.keyword || item.keyword_group || '기타',
+        total_reviews: item.total_reviews || 0,
+        avg_sentiment: item.avg_sentiment || 0,
+        positive_count: item.positive_count || 0,
+        negative_count: item.negative_count || 0,
+        neutral_count: item.neutral_count || 0,
+        sentiment_label: item.sentiment_label || 'neutral',
+        app_name: item.app_name || keyword,
+      }));
+
+      // 6. 앱 정보를 비교 데이터 형식으로 변환
+      const apps = searchData.apps || [];
+      const comparisonApps: ComparisonData[] = apps.slice(0, 3).map((app: any, index: number) => {
+        // 해당 앱의 키워드 그룹 데이터 추출
+        const appKeywordGroups: ComparisonData['keyword_groups'] = {};
+        analysisResults.forEach((result) => {
+          if (result.app_name === app.app_id || index === 0) {
+            appKeywordGroups[result.keyword_group] = {
+              avg_sentiment: result.avg_sentiment,
+              total_reviews: result.total_reviews,
+              sentiment_label: result.sentiment_label,
+            };
+          }
+        });
+
+        return {
+          app_name: app.title || app.app_id || `${keyword} 앱 ${index + 1}`,
+          app_icon: app.img_link || `https://picsum.photos/seed/${app.app_id || index}/128/128`,
+          ai_summary: app.ai_summary || app.intro || `${keyword} 관련 앱입니다.`,
+          review_summary: `평점 ${app.rate || 'N/A'}, 다운로드 ${app.download || 'N/A'}`,
+          feature_recommendations: [
+            '사용자 리뷰를 기반으로 개선 사항을 확인하세요.',
+            '키워드별 감정 분석 결과를 참고하세요.',
+          ],
+          keyword_groups: appKeywordGroups,
         };
       });
 
-      const primaryApp: ComparisonData = {
-        app_name: `${keyword} 앱 A`,
-        app_icon: `https://picsum.photos/seed/${keyword}-app-a/128/128`,
-        ai_summary: `${keyword} 중심으로 사용성을 강화한 표준 버전입니다. 광고 노출을 줄이고 UI 가독성을 높여 첫 방문 이탈을 줄이는 데 초점을 맞춥니다.`,
-        review_summary: '광고 노출에 대한 불만이 있으나 UI 개선과 기능 다양성에 대한 긍정이 우세합니다.',
-        feature_recommendations: [
-          '온보딩 튜토리얼을 2단계로 축소하여 첫 경험 단순화',
-          '광고 빈도 제어 설정과 프리미엄 플랜 안내 배치',
-          '접근성 모드(고대비·큰 글씨) 토글 추가',
-        ],
-        keyword_groups: keywordGroups,
-      };
+      // 기본 앱이 없으면 첫 번째 분석 결과로 생성
+      if (comparisonApps.length === 0 && analysisResults.length > 0) {
+        const keywordGroups: ComparisonData['keyword_groups'] = {};
+        analysisResults.forEach((result) => {
+          keywordGroups[result.keyword_group] = {
+            avg_sentiment: result.avg_sentiment,
+            total_reviews: result.total_reviews,
+            sentiment_label: result.sentiment_label,
+          };
+        });
 
-      const alternativeApp: ComparisonData = {
-        app_name: `${keyword} Insight`,
-        app_icon: `https://picsum.photos/seed/${keyword}-insight/128/128`,
-        ai_summary: '가벼운 UX와 빠른 응답성을 강조한 라이트 버전입니다. 심플한 네비게이션으로 탐색 속도를 높입니다.',
-        review_summary: '속도와 디자인 평가는 긍정적이지만 업데이트 품질 편차로 불만이 일부 존재합니다.',
-        feature_recommendations: [
-          '릴리스 노트에 “해결된 이슈” 섹션을 고정 표시',
-          '오프라인 캐시를 확대해 네트워크 이슈 시 속도 유지',
-          '크래시 리포트 수집 후 자동 롤백 알림 제공',
-        ],
-        keyword_groups: {
-          사용성: { avg_sentiment: 0.38, total_reviews: 200, sentiment_label: 'positive' },
-          성능: { avg_sentiment: 0.15, total_reviews: 150, sentiment_label: 'neutral' },
-          업데이트: { avg_sentiment: -0.18, total_reviews: 80, sentiment_label: 'negative' },
-        },
-      };
+        comparisonApps.push({
+          app_name: analysisResults[0]?.app_name || `${keyword} 앱`,
+          app_icon: `https://picsum.photos/seed/${keyword}/128/128`,
+          ai_summary: `${keyword} 관련 앱의 리뷰 분석 결과입니다.`,
+          review_summary: '수집된 리뷰를 기반으로 분석했습니다.',
+          feature_recommendations: [],
+          keyword_groups: keywordGroups,
+        });
+      }
 
-      const premiumApp: ComparisonData = {
-        app_name: `${keyword} Studio`,
-        app_icon: `https://picsum.photos/seed/${keyword}-studio/128/128`,
-        ai_summary: 'AI 추천 정밀도와 커뮤니티 피드백을 결합한 확장형 버전입니다. 고급 필터와 협업 공유 기능을 제공합니다.',
-        review_summary: '개인화 추천 정확도는 호평이나 가격·구독 모델에 대한 불만이 존재합니다.',
-        feature_recommendations: [
-          '무료 체험 후 전환율을 높이기 위한 1개월 할인 프로모션',
-          '커뮤니티 Q&A에 AI 요약 답변을 함께 표시',
-          '추천 알고리즘 결과에 “이유 보기” 툴팁 제공',
-        ],
-        keyword_groups: {
-          개인화: { avg_sentiment: 0.22, total_reviews: 160, sentiment_label: 'positive' },
-          추천_정확도: { avg_sentiment: 0.05, total_reviews: 140, sentiment_label: 'neutral' },
-          가격: { avg_sentiment: -0.28, total_reviews: 110, sentiment_label: 'negative' },
-        },
-      };
-
-      setAnalysisResults(mockResults);
-      setComparisonData([primaryApp, alternativeApp, premiumApp]);
-      setAppName(primaryApp.app_name);
+      setAnalysisResults(analysisResults);
+      setComparisonData(comparisonApps);
+      setAppName(comparisonApps[0]?.app_name || keyword);
 
       toast({
-        title: '모의 결과 표시',
-        description: '실제 API 연동 전에 UI를 확인할 수 있습니다.',
+        title: '분석 완료',
+        description: `${analysisResults.length}개의 키워드 그룹에 대한 분석이 완료되었습니다.`,
       });
     } catch (error: any) {
+      console.error('검색 오류:', error);
       toast({
         title: '검색 실패',
-        description: '검색 중 오류가 발생했습니다.',
+        description: error.message || '검색 중 오류가 발생했습니다.',
         variant: 'destructive',
       });
     } finally {
