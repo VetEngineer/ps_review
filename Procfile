@@ -1,2 +1,2 @@
-web: python api_server.py
+web: gunicorn --bind 0.0.0.0:$PORT --workers 1 --threads 4 --timeout 300 --keep-alive 5 --access-logfile - --error-logfile - --log-level info api_server:app
 

@@ -81,10 +81,18 @@ CORS(app, resources={
 
 # 전역 변수: 감성분석 모델 (한 번만 로드)
 _sentiment_pipeline = None
+_model_loading_lock = None
+
+# threading 모듈 import (thread-safe 모델 로딩용)
+try:
+    import threading
+    _model_loading_lock = threading.Lock()
+except ImportError:
+    logger.warning("threading 모듈을 import할 수 없습니다. thread-safe 모델 로딩이 비활성화됩니다.")
 
 
 def initialize_model():
-    """서버 시작 시 모델 로드"""
+    """서버 시작 시 모델 로드 (thread-safe)"""
     global _sentiment_pipeline
 
     # 기본적으로 HuggingFace 모델 로딩 활성화 (감정 분석 필수)
@@ -93,7 +101,28 @@ def initialize_model():
         logger.info("환경변수 ENABLE_HF=false로 설정됨. HuggingFace 모델 로드를 건너뜁니다.")
         return
 
-    if HF_AVAILABLE and _sentiment_pipeline is None:
+    # 이미 로드되었으면 스킵
+    if _sentiment_pipeline is not None:
+        return
+    
+    # Thread-safe 모델 로딩
+    if _model_loading_lock:
+        with _model_loading_lock:
+            # Lock 획득 후 다시 확인 (다른 스레드가 이미 로드했을 수 있음)
+            if _sentiment_pipeline is not None:
+                return
+            _load_model_internal()
+    else:
+        # Lock이 없으면 직접 로드
+        if _sentiment_pipeline is None:
+            _load_model_internal()
+
+
+def _load_model_internal():
+    """내부 모델 로딩 함수"""
+    global _sentiment_pipeline
+    
+    if HF_AVAILABLE:
         try:
             logger.info("감성분석 모델 초기화 중...")
             _sentiment_pipeline = load_sentiment_model(use_gpu=False)
@@ -201,12 +230,15 @@ Summary (한국어로만):"""
 
 @app.route('/health', methods=['GET'])
 def health_check():
-    """헬스 체크 엔드포인트"""
+    """헬스 체크 엔드포인트 - 모델 로딩 전에도 빠르게 응답"""
+    # 헬스체크는 모델 로딩 없이도 즉시 응답 (Railway 헬스체크 타임아웃 방지)
+    # 모델 로딩은 백그라운드에서 비동기로 수행하거나 첫 실제 요청 시 수행됨
     return jsonify({
         'status': 'healthy',
         'hf_available': HF_AVAILABLE,
         'model_loaded': _sentiment_pipeline is not None,
-        'gemini_available': GEMINI_AVAILABLE
+        'gemini_available': GEMINI_AVAILABLE,
+        'crawler_available': CRAWLER_AVAILABLE
     }), 200
 
 
@@ -574,6 +606,9 @@ def search_and_collect_endpoint():
 
 @app.route('/analyze', methods=['POST'])
 def analyze_reviews():
+    # 모델이 필요할 수 있으므로 필요시 로드
+    if _sentiment_pipeline is None:
+        initialize_model()
     """
     리뷰 분석 API 엔드포인트
     
@@ -736,6 +771,8 @@ def analyze_reviews():
         }), 500
 
 
+# Gunicorn을 사용할 때는 이 블록이 실행되지 않음
+# 하지만 개발 환경이나 직접 실행할 때를 위해 유지
 if __name__ == '__main__':
     # 모델 초기화
     initialize_model()
@@ -746,3 +783,13 @@ if __name__ == '__main__':
     
     logger.info(f'서버 시작: port={port}, debug={debug}')
     app.run(host='0.0.0.0', port=port, debug=debug)
+
+# Gunicorn 사용 시: 각 워커 프로세스가 시작될 때 모델 로딩
+# 모듈 레벨에서 실행되므로 Gunicorn 워커 시작 시 자동 실행됨
+# 단, 헬스체크는 모델 로딩 없이도 응답 가능하도록 설계됨
+try:
+    # Gunicorn 환경에서도 모델을 미리 로드하려면 여기서 호출
+    # 하지만 메모리 제약이 있으면 지연 로딩도 가능
+    # initialize_model()  # 주석 처리: 필요시 헬스체크나 첫 요청 시 로드
+except Exception as e:
+    logger.warning(f"서버 시작 시 모델 로딩 실패 (지연 로딩으로 전환): {e}")
