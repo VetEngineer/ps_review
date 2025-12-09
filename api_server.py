@@ -38,6 +38,17 @@ try:
 except ImportError:
     logger.warning("python-dotenv 패키지가 설치되지 않았습니다. .env 파일을 자동으로 로드할 수 없습니다.")
 
+# 환경 변수 확인 및 로깅 (디버깅용)
+gemini_key_check = os.environ.get('GEMINI_API_KEY')
+if gemini_key_check:
+    logger.info(f"✓ GEMINI_API_KEY가 설정되어 있습니다. (길이: {len(gemini_key_check)}자, 시작: {gemini_key_check[:10]}...)")
+else:
+    logger.warning("✗ GEMINI_API_KEY가 설정되지 않았습니다. Railway Variables에서 확인하세요.")
+    # 모든 환경 변수 목록 출력 (디버깅용)
+    all_env_keys = [k for k in os.environ.keys() if 'GEMINI' in k.upper() or 'API' in k.upper()]
+    if all_env_keys:
+        logger.info(f"관련 환경 변수 발견: {all_env_keys}")
+
 # Gemini API import
 try:
     import google.generativeai as genai
@@ -103,10 +114,12 @@ def initialize_model():
         logger.debug("모델 로딩이 이전에 실패했습니다. 재시도하지 않습니다.")
         return
 
-    # 기본적으로 HuggingFace 모델 로딩 활성화 (감정 분석 필수)
-    enable_hf = os.environ.get("ENABLE_HF", "true").lower() == "true"
+    # 기본적으로 HuggingFace 모델 로딩 비활성화 (Gemini API 사용 권장)
+    # 메모리 문제를 피하기 위해 기본값을 false로 변경
+    enable_hf = os.environ.get("ENABLE_HF", "false").lower() == "true"
     if not enable_hf:
-        logger.info("환경변수 ENABLE_HF=false로 설정됨. HuggingFace 모델 로드를 건너뜁니다.")
+        logger.info("HuggingFace 모델 로딩이 비활성화되어 있습니다. Gemini API를 사용합니다.")
+        logger.info("💡 HuggingFace 모델을 사용하려면 Railway Variables에서 ENABLE_HF=true로 설정하세요.")
         _model_loading_failed = True  # 의도적으로 비활성화된 경우도 플래그 설정
         return
     
@@ -173,10 +186,20 @@ def analyze_sentiment_with_gemini(text: str) -> Optional[float]:
     if not text or not text.strip():
         return 0.0
     
-    # Gemini API 키 확인
-    gemini_api_key = os.environ.get('GEMINI_API_KEY')
+    # Gemini API 키 확인 (여러 방법 시도)
+    gemini_api_key = (
+        os.environ.get('GEMINI_API_KEY') or 
+        os.environ.get('GEMINI_API') or
+        os.environ.get('GOOGLE_API_KEY')
+    )
+    
     if not gemini_api_key:
         logger.debug("GEMINI_API_KEY가 설정되지 않았습니다. 감정 분석을 건너뜁니다.")
+        return None
+    
+    # API 키가 비어있거나 공백만 있는 경우
+    if not gemini_api_key.strip():
+        logger.warning("GEMINI_API_KEY가 비어있습니다.")
         return None
     
     if not GEMINI_AVAILABLE:
@@ -248,10 +271,16 @@ def summarize_app_intro(intro_text: str) -> str:
     if not intro_text or not intro_text.strip():
         return "앱 소개 정보가 없습니다."
     
-    # Gemini API 키 확인
-    gemini_api_key = os.environ.get('GEMINI_API_KEY')
-    if not gemini_api_key:
+    # Gemini API 키 확인 (여러 방법 시도)
+    gemini_api_key = (
+        os.environ.get('GEMINI_API_KEY') or 
+        os.environ.get('GEMINI_API') or
+        os.environ.get('GOOGLE_API_KEY')
+    )
+    
+    if not gemini_api_key or not gemini_api_key.strip():
         logger.warning("GEMINI_API_KEY가 설정되지 않았습니다. 원본 텍스트를 반환합니다.")
+        logger.warning("💡 Railway Variables에서 GEMINI_API_KEY를 확인하세요.")
         # 원본이 너무 길면 앞부분만 반환
         if len(intro_text) > 200:
             return intro_text[:197] + "..."
@@ -706,18 +735,9 @@ def search_and_collect_endpoint():
 
 @app.route('/analyze', methods=['POST'])
 def analyze_reviews():
-    global _model_loading_failed
-    
-    # 모델이 필요할 수 있으므로 필요시 로드 (메모리 안전)
-    # 메모리 부족 시에도 서버가 계속 작동하도록 try-except로 감쌈
-    # _model_loading_failed 플래그로 재시도 방지
-    if _sentiment_pipeline is None and not _model_loading_failed:
-        try:
-            initialize_model()
-        except Exception as e:
-            logger.warning(f"모델 로딩 실패 (별점 기반 분석만 사용): {e}")
-            # _load_model_internal에서 이미 플래그를 설정하지만, 여기서도 설정
-            _model_loading_failed = True
+    # HuggingFace 모델 로딩 제거 - Gemini API만 사용
+    # 메모리 문제를 피하기 위해 HuggingFace 모델은 사용하지 않음
+    # Gemini API가 없으면 별점 기반 분석만 사용
     """
     리뷰 분석 API 엔드포인트
     
@@ -823,9 +843,19 @@ def analyze_reviews():
             if 'sentiment_score' not in reviews.columns:
                 logger.info('감정 스코어 계산 중...')
                 
-                # Gemini API를 사용한 감정 분석 시도
-                gemini_api_key = os.environ.get('GEMINI_API_KEY')
-                use_gemini = gemini_api_key and GEMINI_AVAILABLE
+                # Gemini API를 사용한 감정 분석 시도 (여러 환경 변수 이름 확인)
+                gemini_api_key = (
+                    os.environ.get('GEMINI_API_KEY') or 
+                    os.environ.get('GEMINI_API') or
+                    os.environ.get('GOOGLE_API_KEY')
+                )
+                use_gemini = gemini_api_key and gemini_api_key.strip() and GEMINI_AVAILABLE
+                
+                if gemini_api_key:
+                    logger.info(f"✓ Gemini API 키 발견 (길이: {len(gemini_api_key)}자)")
+                else:
+                    logger.warning("✗ Gemini API 키를 찾을 수 없습니다. 별점 기반 분석만 사용합니다.")
+                    logger.warning("💡 Railway Variables에서 GEMINI_API_KEY를 확인하세요.")
                 
                 if use_gemini:
                     logger.info('Gemini API를 사용하여 감정 분석 수행 중...')
