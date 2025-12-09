@@ -119,19 +119,25 @@ def initialize_model():
 
 
 def _load_model_internal():
-    """내부 모델 로딩 함수"""
+    """내부 모델 로딩 함수 (메모리 안전)"""
     global _sentiment_pipeline
     
     if HF_AVAILABLE:
         try:
             logger.info("감성분석 모델 초기화 중...")
+            # 메모리 부족 시 OSError나 MemoryError 발생 가능
             _sentiment_pipeline = load_sentiment_model(use_gpu=False)
             if _sentiment_pipeline:
                 logger.info("감성분석 모델 로드 완료")
             else:
                 logger.warning("감성분석 모델 로드 실패 - 별점 기반 분석만 사용")
+        except (OSError, MemoryError) as e:
+            logger.error(f"모델 초기화 중 메모리 부족 오류: {e}")
+            logger.warning("별점 기반 분석만 사용합니다. Railway 메모리 제한을 확인하세요.")
+            _sentiment_pipeline = None
         except Exception as e:
             logger.error(f"모델 초기화 오류: {e}")
+            logger.warning("별점 기반 분석만 사용합니다.")
             _sentiment_pipeline = None
 
 
@@ -606,9 +612,13 @@ def search_and_collect_endpoint():
 
 @app.route('/analyze', methods=['POST'])
 def analyze_reviews():
-    # 모델이 필요할 수 있으므로 필요시 로드
+    # 모델이 필요할 수 있으므로 필요시 로드 (메모리 안전)
+    # 메모리 부족 시에도 서버가 계속 작동하도록 try-except로 감쌈
     if _sentiment_pipeline is None:
-        initialize_model()
+        try:
+            initialize_model()
+        except Exception as e:
+            logger.warning(f"모델 로딩 실패 (별점 기반 분석만 사용): {e}")
     """
     리뷰 분석 API 엔드포인트
     

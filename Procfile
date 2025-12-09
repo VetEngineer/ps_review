@@ -1,2 +1,2 @@
-web: gunicorn --bind 0.0.0.0:$PORT --workers 1 --threads 4 --timeout 300 --keep-alive 5 --access-logfile - --error-logfile - --log-level info api_server:app
+web: gunicorn --bind 0.0.0.0:$PORT --workers 1 --threads 4 --timeout 300 --keep-alive 5 --max-requests 100 --max-requests-jitter 10 --access-logfile - --error-logfile - --log-level info api_server:app
 
