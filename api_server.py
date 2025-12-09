@@ -145,20 +145,44 @@ def summarize_app_intro(intro_text: str) -> str:
             # fallback to gemini-pro
             model = genai.GenerativeModel('gemini-pro')
         
-        # 요약 프롬프트
+        # 요약 프롬프트 (한국어로 강제)
         prompt = f"""다음 앱 소개 텍스트를 200자 내외의 간결한 한국어로 요약해주세요. 
+반드시 한국어로만 작성해주세요. 영어나 다른 언어를 사용하지 마세요.
 핵심 기능과 특징만 포함하고, 불필요한 설명은 제외해주세요.
 
 앱 소개:
 {intro_text}
 
-요약:"""
+요약 (한국어로만 작성):"""
         
-        # API 호출
-        response = model.generate_content(prompt)
+        # API 호출 (한국어 응답 강제)
+        generation_config = {
+            "temperature": 0.3,
+            "top_p": 0.8,
+            "top_k": 40,
+        }
+        
+        response = model.generate_content(
+            prompt,
+            generation_config=generation_config
+        )
         
         # 응답 추출
         summary = response.text.strip()
+        
+        # 응답이 영어인지 확인하고 재요청
+        if summary and not any('\uac00' <= char <= '\ud7a3' for char in summary[:50]):
+            # 한국어 문자가 없으면 다시 요청
+            logger.warning("응답이 영어로 나왔습니다. 한국어로 재요청합니다.")
+            prompt_korean = f"""Summarize the following app description in Korean language only (한국어로만). 
+Write in 200 characters or less. Focus on core features and characteristics.
+
+App description:
+{intro_text}
+
+Summary (한국어로만):"""
+            response = model.generate_content(prompt_korean, generation_config=generation_config)
+            summary = response.text.strip()
         
         # 길이 제한 (200자 내외)
         if len(summary) > 220:
